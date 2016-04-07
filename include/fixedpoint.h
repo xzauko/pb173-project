@@ -56,7 +56,7 @@ struct number{ // forma reprezentacie cisla
         int tmp, carry = 0;
         for (size_t i = min_scale; i>0; --i){ // easier than with iterators
             tmp = values[des_cast[i-1]] + values[other.des_cast[i-1]] + carry;
-            if (tmp > radix){ carry = tmp / radix; }
+            carry = tmp / radix;
             des_cast[i-1] = digits[tmp % radix];
         }
 
@@ -75,12 +75,12 @@ struct number{ // forma reprezentacie cisla
         for (; their != nother.rend(); ++our, ++their){
             // easier than with size_t i
             tmp = values[*our] + values[*their] + carry;
-            if (tmp > radix){ carry = tmp / radix; }
+            carry = tmp / radix;
             *our = digits[tmp % radix];
         }
         for(; our != ncela.rend(); ++our){
             tmp = values[*our] + carry;
-            if (tmp > radix){ carry = tmp / radix; }
+            carry = tmp / radix;
             *our = digits[tmp % radix];
             if (carry == 0) break;
         }

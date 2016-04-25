@@ -12,7 +12,7 @@
 namespace fixedpoint{
 
 #if defined( FIXEDPOINT_CASE_INSENSITIVE ) && ! defined( FIXEDPOINT_CASE_SENSITIVE )
-inline const signed char values[128] = {
+const signed char values[128] = {
 //   0   1   2   3   4   5   6   7   8   9   a   b   c   d   e   f
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x0
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x1
@@ -26,7 +26,7 @@ inline const signed char values[128] = {
 // -2: desatinne oddelovace (. a ,), -1: neplatna cifra,
 // ostatne: hodnota cislice, ak >= sustave - neplatna
 
-inline const char digits[36] = {
+const char digits[36] = {
 //   0    1    2    3    4    5    6    7    8    9
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', // 0
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', // 1
@@ -35,7 +35,7 @@ inline const char digits[36] = {
 };
 // mapovanie hodnota -> cislica
 #elif defined( FIXEDPOINT_CASE_SENSITIVE ) && ! defined( FIXEDPOINT_CASE_INSENSITIVE )
-inline const signed char values[128] = {
+const signed char values[128] = {
 //   0   1   2   3   4   5   6   7   8   9   a   b   c   d   e   f
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x0
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x1
@@ -49,7 +49,7 @@ inline const signed char values[128] = {
 // -2: desatinne oddelovace (. a ,), -1: neplatna cifra,
 // ostatne: hodnota cislice, ak >= sustave - neplatna
 
-inline const char digits[62] = {
+const char digits[62] = {
 //   0    1    2    3    4    5    6    7    8    9
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', // 0
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', // 1
@@ -117,12 +117,12 @@ struct number{
     // O(n) where n is number of digits in number
     number& operator +=(const number & other){
         if ( isPositive != other.isPositive ){
-            isPositive == ! isPositive; // make the signs match
-            (*this) -= other; // do -this-other
-            isPositive == ! isPositive;
+            isPositive = ! isPositive; // make the signs match
+            operator-=(other); // do -this-other
+            isPositive = ! isPositive;
             // flip the resulting sign so that the result is correct
         }
-        size_t boundary = min(des_cast.size(), other.des_cast.size());
+        size_t boundary = std::min(des_cast.size(), other.des_cast.size());
 
         // DESATINNA CAST
         if (des_cast.size() > other.des_cast.size()){
@@ -132,8 +132,11 @@ struct number{
                             other.des_cast.size() - boundary);
         }
         int tmp, carry = 0;
+        int ourss, theirss;
         for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
-            tmp = values[des_cast[i-1]] + values[other.des_cast[i-1]] + carry;
+            ourss = static_cast<int>(des_cast[i-1]);
+            theirss = static_cast<int>(other.des_cast[i-1]);
+            tmp = values[ourss] + values[theirss] + carry;
             carry = tmp / radix;
             des_cast[i-1] = digits[tmp % radix];
         }
@@ -145,9 +148,11 @@ struct number{
         auto our = cela_cast.begin();
         auto their = other.cela_cast.begin();
         for ( ; our != cela_cast.end() ; ++our){
-            tmp = values[ *our ] + carry;
+            ourss = static_cast<int>(*our);
+            theirss = static_cast<int>( *( their++ ));
+            tmp = values[ ourss ] + carry;
             if ( their != other.cela_cast.end() ){
-                tmp += values[ *( their++ ) ];
+                tmp += values[ theirss ];
             }
             carry = tmp / radix;
             *our = digits[ tmp % radix ];

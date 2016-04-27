@@ -121,6 +121,7 @@ struct number{
             operator-=(other); // do -this-other
             isPositive = ! isPositive;
             // flip the resulting sign so that the result is correct
+            return *this;
         }
         size_t boundary = std::min(des_cast.size(), other.des_cast.size());
 

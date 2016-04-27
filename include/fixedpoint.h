@@ -5,6 +5,7 @@
 #include <istream>
 #include <sstream>
 
+
 #if ! ( defined(FIXEDPOINT_CASE_SENSITIVE) || defined(FIXEDPOINT_CASE_INSENSITIVE) )
 #define FIXEDPOINT_CASE_INSENSITIVE
 #endif
@@ -103,10 +104,10 @@ struct number{
     number(const std::string &); // 16::
     number& operator =(const std::string &);
 
-    number(const number &);
-    number(number &&);
-    number& operator =(const number &);
-    number& operator =(number &&);
+    number(const number &) = default;
+    number(number &&) = default;
+    number& operator =(const number &) = default;
+    number& operator =(number &&) = default;
 
     /*
      * ostatne konstruktory a operatory priradenia (copy, move),
@@ -173,7 +174,64 @@ struct number{
         return *this;
     }*/
 
-    number & operator -=(const number &);
+
+    number & operator -=(const number &other){
+        if ( isPositive != other.isPositive ){
+            number o1(other);
+            o1.isPositive = isPositive;
+            return *this +=( o1 );
+        }
+        //1 copy
+        number o1(other);
+        if(cmp_ignore_sig(o1) == -1){//odečítám větší (v abs hodnotě) od menšího, tak je prohodím
+        	swap(o1);
+        	isPositive = !isPositive;
+        }
+        //dále už předpokladam, že odečítám menší od většího
+        size_t boundary = o1.des_cast.size();
+        // DESATINNA CAST
+        if (des_cast.size() < boundary){
+            cela_cast.resize( boundary, digits[0] );
+        }
+        int tmp, carry = 0;
+        for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
+            tmp = values[static_cast<int>(des_cast[i-1])] - values[static_cast<int>(o1.des_cast[i-1])] + carry;
+            if(tmp < 0) {
+            	carry = -1;
+            	tmp +=radix;
+            }else {
+            	carry = 0;
+            }
+            des_cast[i-1] = digits[tmp];
+        }
+
+        // CELA CAST
+        if ( o1.cela_cast.size() > cela_cast.size()){
+            cela_cast.resize( o1.cela_cast.size(), digits[0] );
+        }
+        size_t index = 0;
+        size_t first_digit = 0;
+        for ( index = 0; index < cela_cast.size() ;index++){
+            tmp = values[static_cast<int>( cela_cast.at(index))] + carry;
+            if ( index < o1.cela_cast.size() ){
+                tmp -= values[static_cast<int>( o1.cela_cast.at(index)) ];
+            }
+            if(tmp < 0) {
+            	carry = -1;
+            	tmp +=radix;
+            }else {
+            	carry = 0;
+            }
+            if(0 != tmp) first_digit = index;
+            cela_cast.at(index) =  digits[tmp];
+
+        }
+        cela_cast.resize(first_digit + 1, digits[0] );
+        // At worst 1 copy
+        // or 1 copy and whatever -= does
+        return *this;
+    }
+
     number & operator *=(const number &);
     number & operator /=(const number &);
     number & operator %=(const number &);
@@ -234,11 +292,48 @@ struct number{
      */
     static number convert(const number<oradix> &);
 
+    void swap( number& other ){
+    	cela_cast.swap(other.cela_cast);
+    	des_cast.swap(other.des_cast);
+    	using std::swap;
+    	swap(isPositive, other.isPositive);
+    }
+
 private:
     std::string cela_cast; // najnizsi rad na indexe [0]
     std::string des_cast;  // najvyssi rad na indexe [0]
     bool isPositive;
 
+    int cmp_ignore_sig(const number &other){
+    	//přeskočení případných nul na začátku
+    	size_t pos = cela_cast.find_last_not_of('0');
+    	size_t other_pos = other.cela_cast.find_last_not_of('0');
+    	if(cela_cast.npos == pos) pos=0;
+    	if(other.cela_cast.npos == other_pos) other_pos=0;
+    	if(pos != other_pos){
+    		return (pos > other_pos) ? 1 : -1;
+    	}else{
+    		while(pos > 0){
+    			if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
+    	    		return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
+    			}
+    			pos--;
+    		}
+    		//cela cast je stejna, rozhodne desetina cast
+    		size_t limit = (des_cast.size() > other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
+    		while(pos < limit){
+    			if(values[static_cast<int>(des_cast[pos])] != values[static_cast<int>(other.des_cast[pos])]){
+    	    		return (values[static_cast<int>(des_cast[pos])] > values[static_cast<int>(other.des_cast[pos])]) ? 1 : -1;
+    			}
+    			pos++;
+    		}
+    		if(des_cast.size() != other.des_cast.size()){
+	    		return (des_cast.size() > other.des_cast.size()) ? 1 : -1;
+    		}else{
+    			return 0;
+    		}
+    	}
+    }
 };
 
 

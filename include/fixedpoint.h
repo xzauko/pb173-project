@@ -5,6 +5,7 @@
 #include <istream>
 #include <sstream>
 
+
 #if ! ( defined(FIXEDPOINT_CASE_SENSITIVE) || defined(FIXEDPOINT_CASE_INSENSITIVE) )
 #define FIXEDPOINT_CASE_INSENSITIVE
 #endif

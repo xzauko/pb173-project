@@ -180,7 +180,7 @@ struct number{
             o1.isPositive = isPositive;
             return *this +=( o1 );
         }
-	//1 copy
+        //1 copy
         number o1(other);
         if(cmp_ignore_sig(o1) == -1){//odečítám větší (v abs hodnotě) od menšího, tak je prohodím
         	swap(o1);
@@ -191,10 +191,6 @@ struct number{
         // DESATINNA CAST
         if (des_cast.size() < boundary){
             cela_cast.resize( boundary, digits[0] );
-//            // possibly partial copy
-//            des_cast.append(other.des_cast,
-//                            boundary,
-//                            other.des_cast.size() - boundary);
         }
         int tmp, carry = 0;
         for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
@@ -228,9 +224,6 @@ struct number{
             if(0 != tmp) first_digit = index;
             cela_cast.at(index) =  digits[tmp];
 
-        }
-        if ( carry < 0 ){//k tomuhle by myslim dojít nemělo
-            cela_cast.push_back(digits[radix + carry]);
         }
         cela_cast.resize(first_digit + 1, digits[0] );
         // At worst 1 copy

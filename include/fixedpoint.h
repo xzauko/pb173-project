@@ -13,7 +13,7 @@
 namespace fixedpoint{
 
 #if defined( FIXEDPOINT_CASE_INSENSITIVE ) && ! defined( FIXEDPOINT_CASE_SENSITIVE )
-const signed char values[128] = {
+static const signed char values[128] = {
 //   0   1   2   3   4   5   6   7   8   9   a   b   c   d   e   f
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x0
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x1
@@ -27,7 +27,7 @@ const signed char values[128] = {
 // -2: desatinne oddelovace (. a ,), -1: neplatna cifra,
 // ostatne: hodnota cislice, ak >= sustave - neplatna
 
-const char digits[36] = {
+static const char digits[36] = {
 //   0    1    2    3    4    5    6    7    8    9
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', // 0
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', // 1
@@ -36,7 +36,7 @@ const char digits[36] = {
 };
 // mapovanie hodnota -> cislica
 #elif defined( FIXEDPOINT_CASE_SENSITIVE ) && ! defined( FIXEDPOINT_CASE_INSENSITIVE )
-const signed char values[128] = {
+static const signed char values[128] = {
 //   0   1   2   3   4   5   6   7   8   9   a   b   c   d   e   f
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x0
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0x1
@@ -50,7 +50,7 @@ const signed char values[128] = {
 // -2: desatinne oddelovace (. a ,), -1: neplatna cifra,
 // ostatne: hodnota cislice, ak >= sustave - neplatna
 
-const char digits[62] = {
+static const char digits[62] = {
 //   0    1    2    3    4    5    6    7    8    9
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', // 0
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', // 1
@@ -101,8 +101,45 @@ template<unsigned char radix = 10>
 struct number{
 
     number():isPositive(true){}
-    number(const std::string &); // 16::
-    number& operator =(const std::string &);
+    /**
+     * @brief number
+     */
+    number(const std::string &); // number<16>("18::Ged");
+    /*
+     * tuto konvertuje skutocne
+     */
+    /**
+     * @brief operator =
+     * @param src
+     * @return
+     */
+    /*number& operator =(const std::string & src){
+        number x(src);
+        swap(x);
+        return *this;
+    }*/
+
+    /**
+     * @brief number
+     * @param x
+     */
+    number(long long int x):
+        number(static_cast<unsigned long long int>((x>=0)?x:-x)),
+        isPositive(x>=0)
+    {}
+
+    /**
+     * @brief number
+     * @param x
+     */
+    number(unsigned long long int x):isPositive(true){} //xzauko
+    /**
+     * @brief number
+     * @param x
+     * @param scale
+     */
+    number(double x, unsigned int scale = 0); //xzauko
+
 
     number(const number &) = default;
     number(number &&) = default;
@@ -151,9 +188,9 @@ struct number{
         auto their = other.cela_cast.begin();
         for ( ; our != cela_cast.end() ; ++our){
             ourss = static_cast<int>(*our);
-            theirss = static_cast<int>( *( their++ ));
             tmp = values[ ourss ] + carry;
             if ( their != other.cela_cast.end() ){
+                theirss = static_cast<int>( *( their++ ));
                 tmp += values[ theirss ];
             }
             carry = tmp / radix;
@@ -228,17 +265,17 @@ struct number{
         }
         cela_cast.resize(first_digit + 1, digits[0] );
         // At worst 1 copy
-        // or 1 copy and whatever -= does
+        // or 1 copy and whatever += does
         return *this;
     }
 
-    number & operator *=(const number &);
+    number & operator *=(const number &); // xpocho
     number & operator /=(const number &);
     number & operator %=(const number &);
-    number & operator ^=(const number &);
+    number & operator ^=(const number &); // xpocho
 
-    number& operator ++();
-    number& operator --();
+    number& operator ++(); // xzauko
+    number& operator --(); // xzauko
     number operator ++(int){
         number copy(*this);
         operator++();
@@ -250,7 +287,12 @@ struct number{
         return copy;
     }
 
-    bool operator <(const number &) const;
+    bool operator <(const number & rhs) const{
+        if (rhs.isPositive && !isPositive) return true;
+        if (isPositive && ! rhs.isPositive) return false;
+        if (isPositive) return cmp_ignore_sig(rhs)<0;
+        return cmp_ignore_sig(rhs)>0;
+    }
 
     bool operator ==(const number & rhs) const{
         bool tmpResult = ( isPositive == rhs.isPositive &&
@@ -282,21 +324,34 @@ struct number{
         return result;
     }
 
-    static number eval_postfix(const std::string &);
-    static number eval_infix(const std::string &); // number<16>::eval_infix("10::23 + 2::100010")
+    /**
+     * @brief eval_postfix
+     * @return
+     */
+    static number eval_postfix(const std::string &); // xzauko
+
+    /**
+     * @brief eval_infix
+     * @return
+     */
+    static number eval_infix(const std::string &); // xzauko number<16>::eval_infix("10::23 + 2::100010")
 
     template<unsigned char oradix>
     /**
      * @brief convert
      * @return
      */
-    static number convert(const number<oradix> &);
+    static number convert(const number<oradix> &){
+        //make string from other number
+        //number newnum(zo stringu)
+    }
 
     void swap( number& other ){
     	cela_cast.swap(other.cela_cast);
     	des_cast.swap(other.des_cast);
-    	using std::swap;
-    	swap(isPositive, other.isPositive);
+        //using std::swap;
+        //swap(isPositive, other.isPositive);
+        std::swap(isPositive, other.isPositive);
     }
 
 private:
@@ -304,7 +359,12 @@ private:
     std::string des_cast;  // najvyssi rad na indexe [0]
     bool isPositive;
 
-    int cmp_ignore_sig(const number &other){
+    /**
+     * @brief cmp_ignore_sig
+     * @param other
+     * @return
+     */
+    int cmp_ignore_sig(const number &other) const{
     	//přeskočení případných nul na začátku
     	size_t pos = cela_cast.find_last_not_of('0');
     	size_t other_pos = other.cela_cast.find_last_not_of('0');

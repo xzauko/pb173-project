@@ -2,7 +2,6 @@
 #define FIXEDPOINT_H
 #include <string>
 #include <vector> // in convert_through_native
-#include <climits> // UINT_MAX
 #include <stdexcept> // runtime_exception
 #include <algorithm> // any, reverse, reverse_copy
 #include <iterator> // back_inserter
@@ -587,30 +586,6 @@ private:
             retVal.push_back(digits[x]);
         }
         return retVal;
-    }
-
-    /**
-     * @brief divmod_vector_uint Divides a vector by an uint, returns remainder
-     * @param vec   Dividend, after return holds the quotient
-     * @param div   Divisor
-     * @return  Remainder
-     */
-    static unsigned int divmod_vector_uint(
-            std::vector<unsigned int> & vec,
-            unsigned int div){
-        unsigned long long int rem = 0,uint_size=1;
-        uint_size += UINT_MAX;
-        for(auto x = vec.rbegin();x!=vec.rend();++x){
-            rem *= uint_size;
-            rem += *x;
-            *x = rem / div;
-            rem %= div;
-        }
-        while(vec.back()==0) {
-            vec.pop_back();
-            if (vec.empty()) break;
-        }
-        return static_cast<unsigned int>(rem);
     }
 
     /**

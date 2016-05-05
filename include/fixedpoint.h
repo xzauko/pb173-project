@@ -2,6 +2,7 @@
 #define FIXEDPOINT_H
 #include <string>
 #include <vector> // in convert_through_native
+#include <type_traits> // SFINAE
 #include <stdexcept> // runtime_exception
 #include <algorithm> // any, reverse, reverse_copy
 #include <iterator> // back_inserter
@@ -139,7 +140,7 @@ template<unsigned char radix>
  */
 struct number{
 
-    number():isPositive(true){
+    number():isPositive(true),scale(0){
         static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
     }
     /**
@@ -147,7 +148,8 @@ struct number{
      * @param src
      */
     number(const std::string & src): // number<16>("18::Ged");
-        isPositive(src.find_first_of('-')==src.npos)
+        isPositive(src.find_first_of('-')==src.npos),
+        scale(0)
     {
         static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
         // basic format verification:
@@ -175,11 +177,11 @@ struct number{
             if ( rdx > MAX_RADIX ) {
                 throw(radix_too_high());
             }
-            ++start;  ++rdxend;// goes to second colon
+            ++start, ++rdxend;// goes to second colon
             if (*start != ':'){
                 throw(invalid_number_format("missing 2nd colon in separator"));
             }
-            ++start; ++rdxend;
+            ++start, ++rdxend;
         }
         else rdxend = 0;
         // number validity check:
@@ -191,8 +193,8 @@ struct number{
                     start,
                     src.cend(),
                     [rdx = static_cast<int>(rdx)](const char c){
-                    return (values[static_cast<int>(c)]==-1 &&
-                            (values[static_cast<int>(c)]<rdx));
+                    return (values[static_cast<int>(c)]==-1 ||
+                            (values[static_cast<int>(c)]>=rdx));
                     }))
         {
             throw(invalid_number_format("invalid characters found in input string"));
@@ -239,40 +241,40 @@ struct number{
      * @brief number
      * @param x
      */
-    number(long long int x):
-        number(static_cast<unsigned long long int>((x>=0)?x:-x))
-    {
-        isPositive = (x>=0);
-    }
+    template<typename T, typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
+    number(T x):
+        number(std::string("10::")+std::to_string(x))
+    {}
 
     /**
      * @brief number
      * @param x
      */
-    number(unsigned long long int x){
+    /*number(unsigned long long int x){
         static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
         std::stringstream src("");
         src << "10::";
         src << x;
         number y(number(src.str()));
-        cela_cast = y.cela_cast;
-        des_cast = y.des_cast;
-        isPositive = y.isPositive;
-    }
+        operator=(std::move(y));
+    }*/
     /**
      * @brief number
      * @param x
      * @param scale
      */
-    number(double x, unsigned int scale = 0);/*:scale(scale);{
+    template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
+    number(T x, unsigned int scale = 0){
         static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
         std::stringstream src("10::");
         src<<x;
-        number(src.str());
+        number y(src.str());
+        operator=(std::move(y));
         if (scale>0){
             des_cast.resize(scale,digits[0]);
         }
-    }*/
+        this->scale = scale;
+    }
 
     number(const number &) = default;
     number(number &&) = default;

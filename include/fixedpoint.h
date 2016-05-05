@@ -100,7 +100,7 @@ template<unsigned char radix = 10>
  */
 struct number{
 
-    number():isPositive(true){}
+    number():cela_cast("0"),des_cast("0"),isPositive(true){}
     /**
      * @brief number
      */
@@ -118,15 +118,16 @@ struct number{
         swap(x);
         return *this;
     }*/
-
-    /**
-     * @brief number
-     * @param x
-     */
-    number(long long int x):
-        number(static_cast<unsigned long long int>((x>=0)?x:-x)),
-        isPositive(x>=0)
-    {}
+//
+//    /**
+//     * @brief number
+//     * @param x
+//     */
+//    number(long long int x):
+//        number(static_cast<unsigned long long int>((x>=0)?x:-x))
+//    {
+//        isPositive= x>=0;
+//    }
 
     /**
      * @brief number
@@ -138,7 +139,7 @@ struct number{
      * @param x
      * @param scale
      */
-    number(double x, unsigned int scale = 0); //xzauko
+    number(double x, unsigned int scale); //xzauko
 
 
     number(const number &) = default;
@@ -269,10 +270,69 @@ struct number{
         return *this;
     }
 
-    number & operator *=(const number &); // xpocho
+    number & operator *=(const number & other){
+    	//čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
+    	//pocet desetinych míst
+    	size_t decimals = std::max(des_cast.size(), other.des_cast.size());
+    	//ocekavana maximalni velikost výsledku
+    	size_t size = (decimals + cela_cast.size()) + (decimals + other.cela_cast.size());
+
+
+    	const number a(*this);
+    	const number& b = other;
+
+		const size_t dec_point = 2 * (decimals);
+		des_cast.clear();
+        des_cast.resize(dec_point, digits[0] );
+        cela_cast.clear();
+        cela_cast.resize(size, digits[0] );
+
+        auto product = [&dec_point, this](size_t i) -> char&{
+        	if(i <dec_point){
+        		i = dec_point - i -1;
+        		return des_cast.at(i);
+        	}else{
+        		i = i - dec_point;
+            	return cela_cast.at(i);
+
+        	}
+        };
+        auto get = [&decimals](const number &from,size_t i) -> const char&{
+        	if(i <decimals){
+        		i = decimals - i -1;
+        		if(i < from.des_cast.size()) return from.des_cast.at(i);
+        		//implicitní nuly
+        		else return digits[0];
+        	}else{
+        		i = i - decimals;
+        		if(i < from.cela_cast.size()) return from.cela_cast.at(i);
+        		//implicitní nuly
+        		else return digits[0];
+
+        	}
+        };
+
+        const size_t p = b.cela_cast.size() + decimals;
+        const size_t q = a.cela_cast.size() + decimals;
+    	for(size_t b_i = 0; b_i < p; b_i++){
+    		unsigned char carry= 0;
+    		for(size_t a_i = 0; a_i < q; a_i++){
+    			unsigned long tmp = values[static_cast<int>(product(a_i + b_i))];
+    			tmp += carry + values[static_cast<int>(get(a, a_i ))] * values[static_cast<int>(get(b, b_i))];
+    			carry = tmp / radix;
+    			product(a_i + b_i) = digits[tmp % radix];
+    		}
+			unsigned long tmp = values[static_cast<int>(product(b_i + q - 1))];
+    		tmp += carry;
+    		product(b_i + q -1 ) = digits[tmp];
+    	}
+
+    	size_t pos = cela_cast.find_last_not_of('0');
+    	cela_cast.resize((pos != cela_cast.npos) ? pos+1 : 1, digits[0]);
+    	return *this;
+    }
     number & operator /=(const number &);
     number & operator %=(const number &);
-    number & operator ^=(const number &); // xpocho
 
     number& operator ++(); // xzauko
     number& operator --(); // xzauko
@@ -308,6 +368,24 @@ struct number{
         return tmpResult;
     }
 
+    number& pow(number exponent){
+    	number result;
+    	//vyřeším záporný exponent
+    	if(!exponent.isPositive){
+//    		(*this) /= number(1);
+    		exponent.isPositive = true;
+    	}
+    	//rozdělim exponent na celou část a desetinnou část
+    	number fract_exp(0L);
+    	fract_exp.des_cast.swap(exponent.des_cast);
+    	number copy(*this);
+    	int_pow(exponent);
+    	copy.fract_pow(fract_exp);
+    	//násobení mocnin o stejném základu je sčítání exponentů
+    	//takže vynásobením this * copy, pojet sečtu desetinou a celou část exponentu
+    	(*this) *=copy;
+    	return *this;
+    }
     /**
      * @brief str   returns string representation of the object
      * @return  a newly constructed string
@@ -394,8 +472,41 @@ private:
     		}
     	}
     }
+    /**
+     * @brief rise this number to the power of positive integer exponent
+     * @param exponent nubmer representing positive integer value
+     * @return this
+     */
+    number& int_pow(number exponent){
+    	number nula(0);
+    	number orig(*this);
+    	//naivní algoritmus
+    	while(exponent.cmp_ignore_sig(nula) > 0){
+    		(*this) *= orig;
+    		exponent-=1;
+    	}
+
+    	return *this;
+    }
+
+    /**
+     * @brief rise this number to the power of positive exponent
+     * @param exponent number representing value in range [0..1]
+     * @return this
+     */
+    number& fract_pow(number exponent){
+    	//TODO implementovat, dočasně defaultuju na 1
+    	(*this) = number(1);
+    	return *this;
+
+    }
 };
 
+template<unsigned char radix>
+number<radix> pow(const number<radix>& base,const number<radix> & exponent){
+	number<radix> result(base);
+	return result.pow(exponent);
+}
 
 template<unsigned char radix>
 bool operator <=(const number<radix>& lhs,const number<radix> & rhs){

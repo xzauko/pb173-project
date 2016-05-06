@@ -331,7 +331,34 @@ struct number{
     	cela_cast.resize((pos != cela_cast.npos) ? pos+1 : 1, digits[0]);
     	return *this;
     }
-    number & operator /=(const number &);
+    number & operator /=(const number &){
+    	number result;
+    	size_t dec_point = des_cast.size();
+        auto product = [&dec_point, this](size_t i) -> char&{
+        	if(i <dec_point){
+        		i = dec_point - i -1;
+        		return des_cast.at(i);
+        	}else{
+        		i = i - dec_point;
+            	return cela_cast.at(i);
+
+        	}
+        };
+        auto get = [](const number &from,size_t i) -> const char&{
+        	const size_t decimals = from.des_cast.size()
+        	if(i <decimals){
+        		i = decimals - i -1;
+        		return from.des_cast.at(i);
+        	}else{
+        		i = i - decimals;
+        		if(i < from.cela_cast.size()) return from.cela_cast.at(i);
+        		//implicitní nuly
+        		else return digits[0];
+
+        	}
+        };
+
+    }
     number & operator %=(const number &);
 
     number& operator ++(); // xzauko

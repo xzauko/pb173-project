@@ -140,7 +140,11 @@ template<unsigned char radix>
  */
 struct number{
 
-    number():isPositive(true),scale(0){
+    number():
+        cela_cast{digits[0]},
+        des_cast{},
+        isPositive(true),
+        scale(0){
         static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
     }
     /**
@@ -161,9 +165,9 @@ struct number{
             throw(invalid_number_format("contains more than one decimal separator"));
         }
         auto start = src.cbegin();
-        std::size_t rdx = radix,rdxend;
+        std::size_t rdx = radix;
         if (*start=='-') ++start; // negative check already happened
-        if ((rdxend=src.find_first_of(':'))!=src.npos){ // has radix specified
+        if ((src.find_first_of(':'))!=src.npos){ // has radix specified
             std::stringstream x("");
             while(*start != ':'){
                 if(*start<'0' || '9'<*start) {
@@ -172,23 +176,21 @@ struct number{
                 x << *start;
                 ++start;
             }
-            // start is now in sync with rdxend
             x >> rdx; // radix is always specified as decimal number
             if ( rdx > MAX_RADIX ) {
                 throw(radix_too_high());
             }
-            ++start, ++rdxend;// goes to second colon
+            ++start; // goes to second colon
             if (*start != ':'){
                 throw(invalid_number_format("missing 2nd colon in separator"));
             }
-            ++start, ++rdxend;
+            ++start;
         }
-        else rdxend = 0;
-        // number validity check:
-        if (! isPositive && src[rdxend]=='-'){
+        if ((!isPositive) && *start=='-'){
             // - sign was not read yet
             ++start;
         }
+        // number validity check:
         if (std::any_of(
                     start,
                     src.cend(),
@@ -365,7 +367,7 @@ struct number{
         size_t boundary = o1.des_cast.size();
         // DESATINNA CAST
         if (des_cast.size() < boundary){
-            cela_cast.resize( boundary, digits[0] );
+            des_cast.resize( boundary, digits[0] );
         }
         int tmp, carry = 0;
         for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
@@ -411,8 +413,14 @@ struct number{
     number & operator %=(const number &);
     number & operator ^=(const number &); // xpocho
 
-    number& operator ++(); // xzauko
-    number& operator --(); // xzauko
+    number& operator ++(){
+        operator+=(1); // 1 will be implicitly converted to number
+        return *this;
+    }
+    number& operator --(){
+        operator-=(1); // 1 will be implicitly converted to number
+        return *this;
+    }
     number operator ++(int){
         number copy(*this);
         operator++();
@@ -469,13 +477,145 @@ struct number{
      * @brief eval_postfix
      * @return
      */
-    static number eval_postfix(const std::string &); // xzauko
+    static number eval_postfix(const std::string & expr){
+        std::vector<number> stack;
+        std::string tmp{};
+        number a,b;
+        // for supporting functions needs a more sofisticated logic in case ' '
+        std::string::const_iterator y;
+        for (auto x = expr.cbegin(); x!=expr.cend(); ++x){
+            switch(*x){
+            case ' ':
+                if (tmp.empty()) break; // ignore multiple spaces, ignore leading space
+                stack.push_back(tmp);
+                tmp.clear();
+                break;
+            case '+':
+                if (stack.size() < 2) throw(invalid_expression_format("+ expects 2 operands"));
+                b = std::move(stack.back());
+                stack.pop_back();
+                a = std::move(stack.back());
+                stack.pop_back();
+                a += b;
+                stack.push_back(std::move(a));
+                break;
+            case '-':
+                // negative number sign check
+                y=x;
+                ++y;
+                if (y!=expr.cend() && *y!=' '){
+                    tmp.push_back(*x);
+                    break;
+                }
+                if (stack.size() < 2) throw(invalid_expression_format("- expects 2 operands"));
+                b = std::move(stack.back());
+                stack.pop_back();
+                a = std::move(stack.back());
+                stack.pop_back();
+                a -= b;
+                stack.push_back(std::move(a));
+                break;
+            // NOT IMPLEMENTED OPERATORS:
+            /*case '*':
+                if (stack.size() < 2) throw(invalid_expression_format("* expects 2 operands"));
+                b = std::move(stack.back());
+                stack.pop_back();
+                a = std::move(stack.back());
+                stack.pop_back();
+                a *= b;
+                stack.push_back(std::move(a));
+                break;
+            case '/':
+                if (stack.size() < 2) throw(invalid_expression_format("/ expects 2 operands"));
+                b = std::move(stack.back());
+                stack.pop_back();
+                a = std::move(stack.back());
+                stack.pop_back();
+                a /= b;
+                stack.push_back(std::move(a));
+                break;
+            case '^':
+                if (stack.size() < 2) throw(invalid_expression_format("^ expects 2 operands"));
+                b = std::move(stack.back());
+                stack.pop_back();
+                a = std::move(stack.back());
+                stack.pop_back();
+                a ^= b;
+                stack.push_back(std::move(a));
+                break;
+            case '%':
+                if (stack.size() < 2) throw(invalid_expression_format("% expects 2 operands"));
+                b = std::move(stack.back());
+                stack.pop_back();
+                a = std::move(stack.back());
+                stack.pop_back();
+                a %= b;
+                stack.push_back(std::move(a));
+                break;*/
+            default:
+                tmp.push_back(*x);
+            }
+
+        }
+        if (stack.empty()) throw(invalid_expression_format("No result after evaluation, did you enter an empty string?"));
+        a = std::move(stack.back());
+        return a;
+    }
 
     /**
      * @brief eval_infix
      * @return
      */
-    static number eval_infix(const std::string &); // xzauko number<16>::eval_infix("10::23 + 2::100010")
+    static number eval_infix(const std::string & expr){
+        // xzauko number<16>::eval_infix("10::23 + 2::100010")
+        using std::string;
+        std::vector<char> operatorStack; // if functions are to be supported, this has to store strings
+        unsigned int prec, oprec;
+        const string precedences[]{"+-","*/%","^","([{"}, associativity[2]{"+-*/%","^"};
+        std::string postfix{};
+        for (auto x = expr.begin(); x!=expr.end();++x){
+            switch(*x){
+            case '+': case '-':
+            case '*': case '/':
+            case '^': case '%':
+                // negative number sign check
+                if (*x=='-'){
+                    auto y = x;
+                    ++y;
+                    if ( y==expr.end()) throw(invalid_expression_format("expression ends with a -"));
+                    else if(values[static_cast<int>(*y)] >= 0) postfix.push_back(*x);
+                }
+                prec = 0;
+                for(; precedences[prec].find(*x)==string::npos; ++prec);
+                while(!operatorStack.empty()){
+                    oprec = 0;
+                    for(; precedences[oprec].find(operatorStack.back())==string::npos; ++oprec);
+                    if (oprec > prec || (associativity[0].find(*x)!=string::npos && oprec==prec)){
+                            postfix.push_back(' ');
+                            postfix.push_back(operatorStack.back());
+                            operatorStack.pop_back();
+                    }
+                    else break;
+                }
+                operatorStack.push_back(*x);
+                break;
+            case '(': case '[': case '{':
+                operatorStack.push_back('(');
+                break;
+            case ')': case ']': case '}':
+                while(operatorStack.back()!='('){
+                    postfix.push_back(' ');
+                    postfix.push_back(operatorStack.back());
+                    operatorStack.pop_back();
+                }
+                operatorStack.pop_back();
+                break;
+            default:
+                postfix.push_back(*x);
+            }
+        }
+        return eval_postfix(postfix);
+    }
 
     template<unsigned char oradix>
     /**

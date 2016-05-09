@@ -611,20 +611,23 @@ private:
      */
     int cmp_ignore_sig(const number &other) const{
     	//přeskočení případných nul na začátku
-    	int pos = cela_cast.find_last_not_of('0');
-    	int other_pos = other.cela_cast.find_last_not_of('0');
+    	size_t pos = cela_cast.find_last_not_of('0');
+    	size_t other_pos = other.cela_cast.find_last_not_of('0');
     	if(cela_cast.npos == pos) pos=0;
     	if(other.cela_cast.npos == other_pos) other_pos=0;
     	if(pos != other_pos){
     		return (pos > other_pos) ? 1 : -1;
     	}else{
-    		while(pos >= 0){
+    		while(pos > 0){
     			if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
     	    		return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
     			}
     			pos--;
     		}
-    		pos = 0;
+    		//porovnání nultých prvků celých částí
+			if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
+	    		return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
+			}
     		//cela cast je stejna, rozhodne desetina cast
     		size_t limit = (des_cast.size() > other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
     		while(pos < limit){
@@ -671,27 +674,26 @@ private:
     	}
     	std::string result;
     	number divisor;
-    	number dividet;
+    	number dividend;
     	//oba posunu tak, abych měl celá čísla, takže si uložím kam pak posunout výsledek
     	long long int final_dec_point = scale;
     	final_dec_point -= other.scale;
-    	size_t bigger_by = cela_cast.size() - other.cela_cast.size();
     	//převedu na celočíselné dělění
 
 		divisor.cela_cast.clear();
 		divisor.cela_cast.append(other.des_cast.rbegin(),other.des_cast.rend());
 		divisor.cela_cast.append(other.cela_cast);
 
-		dividet.cela_cast.clear();
+		dividend.cela_cast.clear();
 		if(divisor.cela_cast.size() > cela_cast.size()){
 			size_t num_length = divisor.cela_cast.size() - cela_cast.size();
-			dividet.cela_cast.append(des_cast.rbegin(),des_cast.rend() - num_length);
-			dividet.cela_cast.append(cela_cast);
+			dividend.cela_cast.append(des_cast.rbegin(),des_cast.rend() - num_length);
+			dividend.cela_cast.append(cela_cast);
 		}else{
-			dividet.cela_cast.append(cela_cast, cela_cast.size() - divisor.cela_cast.size(),cela_cast.npos);
+			dividend.cela_cast.append(cela_cast, cela_cast.size() - divisor.cela_cast.size(),cela_cast.npos);
 		}
 
-
+		//pomocná funkce pro spojitý přístup k prvkům čísla
         auto get = [ this](size_t i) ->const char&{
         	if(i <scale){
         		i = scale - i -1;
@@ -703,6 +705,7 @@ private:
         	}
         };
     	isPositive = isPositive == other.isPositive;
+    	//počet kroků dělení
     	int steps = (cela_cast.size() + scale) - divisor.cela_cast.size();
 
     	if (steps < 0){//dělitel je řádově větší, takže celé tohle číso je zbytek
@@ -710,15 +713,16 @@ private:
     		return *this;
     	}
 
+    	//pozice právě počítané číslice výsledku výsledku
 		size_t pos = 0;
     	for(int i = steps; 0 <= i;i--){
     		size_t tmp=0;
-    		while(dividet.cmp_ignore_sig(divisor) >= 0){
+    		while(dividend.cmp_ignore_sig(divisor) >= 0){
     			tmp++;
-    			dividet -= divisor;
+    			dividend -= divisor;
     		}
     		result.push_back(digits[tmp]);
-    		if(i > 0) dividet.cela_cast = get(i-1) + dividet.cela_cast;
+    		if(i > 0) dividend.cela_cast = get(i-1) + dividend.cela_cast;
     		pos++;
     	}
     	if(div){
@@ -726,8 +730,8 @@ private:
     		des_cast.assign(result.begin()+(result.size() - final_dec_point),result.end());
     		scale = final_dec_point;
     	}else{
-    		cela_cast.assign(dividet.cela_cast.rbegin()+scale,dividet.cela_cast.rend());
-    		des_cast.assign(dividet.cela_cast.begin()+(dividet.cela_cast.size() - scale),dividet.cela_cast.end());
+    		cela_cast.assign(dividend.cela_cast.rbegin()+scale,dividend.cela_cast.rend());
+    		des_cast.assign(dividend.cela_cast.begin()+(dividend.cela_cast.size() - scale),dividend.cela_cast.end());
 
     	}
         strip_zeroes_and_fix_scale();

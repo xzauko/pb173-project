@@ -110,7 +110,7 @@ struct radix_too_high: public std::runtime_error{
  * number by zero.
  */
 struct division_by_zero: public std::runtime_error{
-	division_by_zero():std::runtime_error("division by zero"){}
+    division_by_zero():std::runtime_error("division by zero"){}
 };
 
 /**
@@ -119,8 +119,8 @@ struct division_by_zero: public std::runtime_error{
  * The reason is further specified in the what(method).
  */
 struct unsuported_operation: public std::runtime_error{
-	unsuported_operation(const char * what):std::runtime_error(what){}
-	unsuported_operation(const std::string & what):std::runtime_error(what){}
+    unsuported_operation(const char * what):std::runtime_error(what){}
+    unsuported_operation(const std::string & what):std::runtime_error(what){}
 };
 
 
@@ -378,8 +378,8 @@ struct number{
         //1 copy
         number o1(other);
         if(cmp_ignore_sig(o1) == -1){//odečítám větší (v abs hodnotě) od menšího, tak je prohodím
-        	swap(o1);
-        	isPositive = !isPositive;
+            swap(o1);
+            isPositive = !isPositive;
         }
         //dále už předpokladam, že odečítám menší od většího
         size_t boundary = o1.des_cast.size();
@@ -391,10 +391,10 @@ struct number{
         for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
             tmp = values[static_cast<int>(des_cast[i-1])] - values[static_cast<int>(o1.des_cast[i-1])] + carry;
             if(tmp < 0) {
-            	carry = -1;
-            	tmp +=radix;
+                carry = -1;
+                tmp +=radix;
             }else {
-            	carry = 0;
+                carry = 0;
             }
             des_cast[i-1] = digits[tmp];
         }
@@ -411,10 +411,10 @@ struct number{
                 tmp -= values[static_cast<int>( o1.cela_cast.at(index)) ];
             }
             if(tmp < 0) {
-            	carry = -1;
-            	tmp +=radix;
+                carry = -1;
+                tmp +=radix;
             }else {
-            	carry = 0;
+                carry = 0;
             }
             if(0 != tmp) first_digit = index;
             cela_cast.at(index) =  digits[tmp];
@@ -428,74 +428,76 @@ struct number{
     }
 
     number & operator *=(const number & other){
-    	//čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
-    	//pocet desetinych míst
-    	size_t decimals = std::max(des_cast.size(), other.des_cast.size());
-    	//ocekavana maximalni velikost výsledku
-    	size_t size = (decimals + cela_cast.size()) + (decimals + other.cela_cast.size());
+        //čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
+        //pocet desetinych míst
+        size_t decimals = std::max(des_cast.size(), other.des_cast.size());
+        //ocekavana maximalni velikost výsledku
+        size_t size = (decimals + cela_cast.size()) + (decimals + other.cela_cast.size());
 
 
-    	const number a(*this);
-    	const number& b = other;
+        const number a(*this);
+        const number& b = other;
 
-		const size_t dec_point = 2 * (decimals);
-		des_cast.clear();
+        const size_t dec_point = 2 * (decimals);
+        des_cast.clear();
         des_cast.resize(dec_point, digits[0] );
         cela_cast.clear();
         cela_cast.resize(size, digits[0] );
 
         auto product = [&dec_point, this](size_t i) -> char&{
-        	if(i <dec_point){
-        		i = dec_point - i -1;
-        		return des_cast.at(i);
-        	}else{
-        		i = i - dec_point;
-            	return cela_cast.at(i);
+            if(i <dec_point){
+                i = dec_point - i -1;
+                return des_cast.at(i);
+            }else{
+                i = i - dec_point;
+                return cela_cast.at(i);
 
-        	}
+            }
         };
         auto get = [&decimals](const number &from,size_t i) -> const char&{
-        	if(i <decimals){
-        		i = decimals - i -1;
-        		if(i < from.des_cast.size()) return from.des_cast.at(i);
-        		//implicitní nuly
-        		else return digits[0];
-        	}else{
-        		i = i - decimals;
-        		if(i < from.cela_cast.size()) return from.cela_cast.at(i);
-        		//implicitní nuly
-        		else return digits[0];
+            if(i <decimals){
+                i = decimals - i -1;
+                if(i < from.des_cast.size()) return from.des_cast.at(i);
+                //implicitní nuly
+                else return digits[0];
+            }else{
+                i = i - decimals;
+                if(i < from.cela_cast.size()) return from.cela_cast.at(i);
+                //implicitní nuly
+                else return digits[0];
 
-        	}
+            }
         };
 
         const size_t p = b.cela_cast.size() + decimals;
         const size_t q = a.cela_cast.size() + decimals;
-    	for(size_t b_i = 0; b_i < p; b_i++){
-    		unsigned char carry= 0;
-    		for(size_t a_i = 0; a_i < q; a_i++){
-    			unsigned long tmp = values[static_cast<int>(product(a_i + b_i))];
-    			tmp += carry + values[static_cast<int>(get(a, a_i ))] * values[static_cast<int>(get(b, b_i))];
-    			carry = tmp / radix;
-    			product(a_i + b_i) = digits[tmp % radix];
-    		}
-			unsigned long tmp = values[static_cast<int>(product(b_i + q - 1))];
-    		tmp += carry;
-    		product(b_i + q -1 ) = digits[tmp];
-    	}
+        for(size_t b_i = 0; b_i < p; b_i++){
+            unsigned char carry= 0;
+            for(size_t a_i = 0; a_i < q; a_i++){
+                unsigned long tmp = values[static_cast<int>(product(a_i + b_i))];
+                tmp += carry + values[static_cast<int>(get(a, a_i ))] * values[static_cast<int>(get(b, b_i))];
+                carry = tmp / radix;
+                product(a_i + b_i) = digits[tmp % radix];
+            }
+            unsigned long tmp = values[static_cast<int>(product(b_i + q - 1))];
+            tmp += carry;
+            product(b_i + q -1 ) = digits[tmp];
+        }
 
-    	size_t pos = cela_cast.find_last_not_of(digits[0]);
-    	if(pos != cela_cast.npos) pos += 1;
-    	else pos = 1;
-    	cela_cast.resize(pos, digits[0]);
+        size_t pos = cela_cast.find_last_not_of(digits[0]);
+        if(pos != cela_cast.npos) pos += 1;
+        else pos = 1;
+        cela_cast.resize(pos, digits[0]);
         strip_zeroes_and_fix_scale();
-    	return *this;
+        return *this;
     }
+
     number & operator /=(const number &other){
-    	return div_or_mod(other,true);
+        return div_or_mod(other,true);
     }
+
     number & operator %=(const number &other){
-    	return div_or_mod(other,false);
+        return div_or_mod(other,false);
     }
 
     number& operator ++(); // xzauko
@@ -531,23 +533,25 @@ struct number{
         }
         return tmpResult;
     }
+
     number& pow(number exponent){
-    	number result;
-    	//vyřeším záporný exponent
-    	if(!exponent.isPositive){
-//    		(*this) /= number(1);
-    		exponent.isPositive = true;
-    	}
-    	//rozdělim exponent na celou část a desetinnou část
-    	number fract_exp(0);
-    	fract_exp.des_cast.swap(exponent.des_cast);
-    	if(fract_exp != 0){
-    		throw unsuported_operation("Only integer exponent is suported for power function!");
-    	}
-    	int_pow(exponent);
+        number result;
+        //vyřeším záporný exponent
+        if(!exponent.isPositive){
+            //(*this) /= number(1);
+            exponent.isPositive = true;
+        }
+        //rozdělim exponent na celou část a desetinnou část
+        number fract_exp(0);
+        fract_exp.des_cast.swap(exponent.des_cast);
+        if(fract_exp != 0){
+            throw unsuported_operation("Only integer exponent is suported for power function!");
+        }
+        int_pow(exponent);
         strip_zeroes_and_fix_scale();
-    	return *this;
+        return *this;
     }
+
     /**
      * @brief str   returns string representation of the object
      * @return  a newly constructed string
@@ -591,8 +595,8 @@ struct number{
     }
 
     void swap( number& other ){
-    	cela_cast.swap(other.cela_cast);
-    	des_cast.swap(other.des_cast);
+        cela_cast.swap(other.cela_cast);
+        des_cast.swap(other.des_cast);
         //using std::swap;
         //swap(isPositive, other.isPositive);
         std::swap(isPositive, other.isPositive);
@@ -610,57 +614,56 @@ private:
      * @return
      */
     int cmp_ignore_sig(const number &other) const{
-    	//přeskočení případných nul na začátku
-    	size_t pos = cela_cast.find_last_not_of('0');
-    	size_t other_pos = other.cela_cast.find_last_not_of('0');
-    	if(cela_cast.npos == pos) pos=0;
-    	if(other.cela_cast.npos == other_pos) other_pos=0;
-    	if(pos != other_pos){
-    		return (pos > other_pos) ? 1 : -1;
-    	}else{
-    		while(pos > 0){
-    			if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
-    	    		return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
-    			}
-    			pos--;
-    		}
-    		//porovnání nultých prvků celých částí
-			if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
-	    		return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
-			}
-    		//cela cast je stejna, rozhodne desetina cast
-    		size_t limit = (des_cast.size() > other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
-    		while(pos < limit){
-    			if(values[static_cast<int>(des_cast[pos])] != values[static_cast<int>(other.des_cast[pos])]){
-    	    		return (values[static_cast<int>(des_cast[pos])] > values[static_cast<int>(other.des_cast[pos])]) ? 1 : -1;
-    			}
-    			pos++;
-    		}
-    		if(des_cast.size() != other.des_cast.size()){
-	    		return (des_cast.size() > other.des_cast.size()) ? 1 : -1;
-    		}else{
-    			return 0;
-    		}
-    	}
+        //přeskočení případných nul na začátku
+        size_t pos = cela_cast.find_last_not_of('0');
+        size_t other_pos = other.cela_cast.find_last_not_of('0');
+        if(cela_cast.npos == pos) pos=0;
+        if(other.cela_cast.npos == other_pos) other_pos=0;
+        if(pos != other_pos){
+            return (pos > other_pos) ? 1 : -1;
+        }else{
+            while(pos > 0){
+                if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
+                    return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
+                }
+                pos--;
+            }
+            //porovnání nultých prvků celých částí
+            if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
+                return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
+            }
+            //cela cast je stejna, rozhodne desetina cast
+            size_t limit = (des_cast.size() > other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
+            while(pos < limit){
+                if(values[static_cast<int>(des_cast[pos])] != values[static_cast<int>(other.des_cast[pos])]){
+                    return (values[static_cast<int>(des_cast[pos])] > values[static_cast<int>(other.des_cast[pos])]) ? 1 : -1;
+                }
+                pos++;
+            }
+            if(des_cast.size() != other.des_cast.size()){
+                return (des_cast.size() > other.des_cast.size()) ? 1 : -1;
+            }else{
+                return 0;
+            }
+        }
     }
+
     /**
      * @brief rise this number to the power of positive integer exponent
      * @param exponent nubmer representing positive integer value
      * @return this
      */
     number& int_pow(number exponent){
-    	number nula(0);
-    	number orig(*this);
-    	//naivní algoritmus
-    	while(exponent.cmp_ignore_sig(nula) > 0){
-    		(*this) *= orig;
-    		exponent-=1;
-    	}
+        number nula(0);
+        number orig(*this);
+        //naivní algoritmus
+        while(exponent.cmp_ignore_sig(nula) > 0){
+            (*this) *= orig;
+            exponent-=1;
+        }
 
-    	return *this;
+        return *this;
     }
-
-
 
     /**
      * @brief divides this by other and returns either the result of division or modulo based on the div parameter
@@ -669,73 +672,73 @@ private:
      * @return result of division if div is true and result of modulo otherwise
      */
     number& div_or_mod(const number other,bool div){
-    	if(other == 0){
-    		throw division_by_zero();
-    	}
-    	std::string result;
-    	number divisor;
-    	number dividend;
-    	//oba posunu tak, abych měl celá čísla, takže si uložím kam pak posunout výsledek
-    	long long int final_dec_point = scale;
-    	final_dec_point -= other.scale;
-    	//převedu na celočíselné dělění
+        if(other == 0){
+            throw division_by_zero();
+        }
+        std::string result;
+        number divisor;
+        number dividend;
+        //oba posunu tak, abych měl celá čísla, takže si uložím kam pak posunout výsledek
+        long long int final_dec_point = scale;
+        final_dec_point -= other.scale;
+        //převedu na celočíselné dělění
 
-		divisor.cela_cast.clear();
-		divisor.cela_cast.append(other.des_cast.rbegin(),other.des_cast.rend());
-		divisor.cela_cast.append(other.cela_cast);
+        divisor.cela_cast.clear();
+        divisor.cela_cast.append(other.des_cast.rbegin(),other.des_cast.rend());
+        divisor.cela_cast.append(other.cela_cast);
 
-		dividend.cela_cast.clear();
-		if(divisor.cela_cast.size() > cela_cast.size()){
-			size_t num_length = divisor.cela_cast.size() - cela_cast.size();
-			dividend.cela_cast.append(des_cast.rbegin(),des_cast.rend() - num_length);
-			dividend.cela_cast.append(cela_cast);
-		}else{
-			dividend.cela_cast.append(cela_cast, cela_cast.size() - divisor.cela_cast.size(),cela_cast.npos);
-		}
+        dividend.cela_cast.clear();
+        if(divisor.cela_cast.size() > cela_cast.size()){
+            size_t num_length = divisor.cela_cast.size() - cela_cast.size();
+            dividend.cela_cast.append(des_cast.rbegin(),des_cast.rend() - num_length);
+            dividend.cela_cast.append(cela_cast);
+        }else{
+            dividend.cela_cast.append(cela_cast, cela_cast.size() - divisor.cela_cast.size(),cela_cast.npos);
+        }
 
-		//pomocná funkce pro spojitý přístup k prvkům čísla
+        //pomocná funkce pro spojitý přístup k prvkům čísla
         auto get = [ this](size_t i) ->const char&{
-        	if(i <scale){
-        		i = scale - i -1;
-        		return des_cast.at(i);
-        	}else{
-        		i = i - scale;
-            	return cela_cast.at(i);
+            if(i <scale){
+                i = scale - i -1;
+                return des_cast.at(i);
+            }else{
+                i = i - scale;
+                return cela_cast.at(i);
 
-        	}
+            }
         };
-    	isPositive = isPositive == other.isPositive;
-    	//počet kroků dělení
-    	int steps = (cela_cast.size() + scale) - divisor.cela_cast.size();
+        isPositive = isPositive == other.isPositive;
+        //počet kroků dělení
+        int steps = (cela_cast.size() + scale) - divisor.cela_cast.size();
 
-    	if (steps < 0){//dělitel je řádově větší, takže celé tohle číso je zbytek
-    		if(div) *this = 0;
-    		return *this;
-    	}
+        if (steps < 0){//dělitel je řádově větší, takže celé tohle číso je zbytek
+            if(div) *this = 0;
+            return *this;
+        }
 
-    	//pozice právě počítané číslice výsledku výsledku
-		size_t pos = 0;
-    	for(int i = steps; 0 <= i;i--){
-    		size_t tmp=0;
-    		while(dividend.cmp_ignore_sig(divisor) >= 0){
-    			tmp++;
-    			dividend -= divisor;
-    		}
-    		result.push_back(digits[tmp]);
-    		if(i > 0) dividend.cela_cast = get(i-1) + dividend.cela_cast;
-    		pos++;
-    	}
-    	if(div){
-    		cela_cast.assign(result.rbegin()+final_dec_point,result.rend());
-    		des_cast.assign(result.begin()+(result.size() - final_dec_point),result.end());
-    		scale = final_dec_point;
-    	}else{
-    		cela_cast.assign(dividend.cela_cast.rbegin()+scale,dividend.cela_cast.rend());
-    		des_cast.assign(dividend.cela_cast.begin()+(dividend.cela_cast.size() - scale),dividend.cela_cast.end());
+        //pozice právě počítané číslice výsledku výsledku
+        size_t pos = 0;
+        for(int i = steps; 0 <= i;i--){
+            size_t tmp=0;
+            while(dividend.cmp_ignore_sig(divisor) >= 0){
+                tmp++;
+                dividend -= divisor;
+            }
+            result.push_back(digits[tmp]);
+            if(i > 0) dividend.cela_cast = get(i-1) + dividend.cela_cast;
+            pos++;
+        }
+        if(div){
+            cela_cast.assign(result.rbegin()+final_dec_point,result.rend());
+            des_cast.assign(result.begin()+(result.size() - final_dec_point),result.end());
+            scale = final_dec_point;
+        }else{
+            cela_cast.assign(dividend.cela_cast.rbegin()+scale,dividend.cela_cast.rend());
+            des_cast.assign(dividend.cela_cast.begin()+(dividend.cela_cast.size() - scale),dividend.cela_cast.end());
 
-    	}
+        }
         strip_zeroes_and_fix_scale();
-    	return *this;
+        return *this;
     }
 
 
@@ -832,8 +835,8 @@ private:
 
 template<unsigned char radix>
 number<radix> pow(const number<radix>& base,const number<radix> & exponent){
-	number<radix> result(base);
-	return result.pow(exponent);
+    number<radix> result(base);
+    return result.pow(exponent);
 }
 
 template<unsigned char radix>

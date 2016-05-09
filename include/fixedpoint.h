@@ -104,6 +104,26 @@ struct radix_too_high: public std::runtime_error{
     radix_too_high():std::runtime_error("the specified radix is too high"){}
 };
 
+/**
+ * @brief The radix_too_high struct is an exception related to number struct
+ * If this exception is thrown, it means that there was an attempt to divide
+ * number by zero.
+ */
+struct division_by_zero: public std::runtime_error{
+	division_by_zero():std::runtime_error("division by zero"){}
+};
+
+/**
+ * @brief The unsuported_operation struct is an exception related to number struct
+ * If this exception is thrown, it means that the requested operation is not suported.
+ * The reason is further specified in the what(method).
+ */
+struct unsuported_operation: public std::runtime_error{
+	unsuported_operation(const char * what):std::runtime_error(what){}
+	unsuported_operation(const std::string & what):std::runtime_error(what){}
+};
+
+
 template<unsigned char radix>
 /**
  * <b>The number struct represents the fixedpoint numbers</b>
@@ -401,6 +421,7 @@ struct number{
 
         }
         cela_cast.resize(first_digit + 1, digits[0] );
+        strip_zeroes_and_fix_scale();
         // At worst 1 copy
         // or 1 copy and whatever += does
         return *this;
@@ -467,80 +488,15 @@ struct number{
     	if(pos != cela_cast.npos) pos += 1;
     	else pos = 1;
     	cela_cast.resize(pos, digits[0]);
+        strip_zeroes_and_fix_scale();
     	return *this;
     }
     number & operator /=(const number &other){
-    	std::string result;
-    	number divisor;
-    	number dividet;
-    	//oba posunu tak, abych měl celá čísla, takže si uložím kam pak posunout výsledek
-    	long long int final_dec_point = scale;
-    	final_dec_point -= other.scale;
-    	size_t bigger_by = cela_cast.size() - other.cela_cast.size();
-    	//celočíselné dělění
-    	if(!(scale || scale) && (bigger_by < 0)) {
-    		*this = 0;
-    		return *this;
-    	}
-    		dividet.cela_cast.clear();
-    		dividet.cela_cast.append(des_cast.rbegin(),des_cast.rend());
-    		dividet.cela_cast.append(cela_cast);
-
-    	isPositive = isPositive == other.isPositive;
-
-    		divisor.cela_cast.clear();
-    		divisor.cela_cast.resize(bigger_by, digits[0]);
-    		divisor.cela_cast.append(other.des_cast.rbegin(),other.des_cast.rend());
-    		divisor.cela_cast.append(other.cela_cast);
-
-
-		size_t pos = 0;
-    	while(divisor.cela_cast.size()){
-    		size_t tmp=0;
-    		while(dividet.cmp_ignore_sig(divisor) >= 0){
-    			tmp++;
-    			dividet -= divisor;
-    		}
-    		result.push_back(digits[tmp]);
-
-    		if(divisor.cela_cast[0] != digits[0]) break;
-    		//divisor / base
-    		divisor.cela_cast.erase(0,1);
-    		pos++;
-    	}
-
-    	cela_cast.assign(result.rbegin()+final_dec_point,result.rend());
-    	des_cast.assign(result.begin()+(result.size() - final_dec_point),result.end());
-    	scale = final_dec_point;
-    	return *this;
-    	size_t dec_point = des_cast.size();
-        auto remainder = [&dec_point, this](size_t i) -> char&{
-        	if(i <dec_point){
-        		i = dec_point - i -1;
-        		return des_cast.at(i);
-        	}else{
-        		i = i - dec_point;
-            	return cela_cast.at(i);
-
-        	}
-        };
-        auto get = [](const number &from,size_t i) -> const char&{
-        	const size_t decimals = from.des_cast.size();
-        	if(i <decimals){
-        		i = decimals - i -1;
-        		return from.des_cast.at(i);
-        	}else{
-        		i = i - decimals;
-        		if(i < from.cela_cast.size()) return from.cela_cast.at(i);
-        		//implicitní nuly
-        		else return digits[0];
-
-        	}
-
-        };
-
+    	return div_or_mod(other,true);
     }
-    number & operator %=(const number &);
+    number & operator %=(const number &other){
+    	return div_or_mod(other,false);
+    }
 
     number& operator ++(); // xzauko
     number& operator --(); // xzauko
@@ -575,7 +531,6 @@ struct number{
         }
         return tmpResult;
     }
-
     number& pow(number exponent){
     	number result;
     	//vyřeším záporný exponent
@@ -584,14 +539,13 @@ struct number{
     		exponent.isPositive = true;
     	}
     	//rozdělim exponent na celou část a desetinnou část
-    	number fract_exp(0L);
+    	number fract_exp(0);
     	fract_exp.des_cast.swap(exponent.des_cast);
-    	number copy(*this);
+    	if(fract_exp != 0){
+    		throw unsuported_operation("Only integer exponent is suported for power function!");
+    	}
     	int_pow(exponent);
-    	copy.fract_pow(fract_exp);
-    	//násobení mocnin o stejném základu je sčítání exponentů
-    	//takže vynásobením this * copy, pojet sečtu desetinou a celou část exponentu
-    	(*this) *=copy;
+        strip_zeroes_and_fix_scale();
     	return *this;
     }
     /**
@@ -657,8 +611,8 @@ private:
      */
     int cmp_ignore_sig(const number &other) const{
     	//přeskočení případných nul na začátku
-    	size_t pos = cela_cast.find_last_not_of('0');
-    	size_t other_pos = other.cela_cast.find_last_not_of('0');
+    	int pos = cela_cast.find_last_not_of('0');
+    	int other_pos = other.cela_cast.find_last_not_of('0');
     	if(cela_cast.npos == pos) pos=0;
     	if(other.cela_cast.npos == other_pos) other_pos=0;
     	if(pos != other_pos){
@@ -670,6 +624,7 @@ private:
     			}
     			pos--;
     		}
+    		pos = 0;
     		//cela cast je stejna, rozhodne desetina cast
     		size_t limit = (des_cast.size() > other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
     		while(pos < limit){
@@ -702,14 +657,80 @@ private:
     	return *this;
     }
 
+
+
     /**
-     * @brief rise this number to the power of positive exponent
-     * @param exponent number representing value in range [0..1]
-     * @return this
+     * @brief divides this by other and returns either the result of division or modulo based on the div parameter
+     * @param other number to divide this by
+     * @param div whether division, or modulo shall be returned
+     * @return result of division if div is true and result of modulo otherwise
      */
-    number& fract_pow(number exponent){
-    	//TODO implementovat, dočasně defaultuju na 1
-    	(*this) = number(1);
+    number& div_or_mod(const number other,bool div){
+    	if(other == 0){
+    		throw division_by_zero();
+    	}
+    	std::string result;
+    	number divisor;
+    	number dividet;
+    	//oba posunu tak, abych měl celá čísla, takže si uložím kam pak posunout výsledek
+    	long long int final_dec_point = scale;
+    	final_dec_point -= other.scale;
+    	size_t bigger_by = cela_cast.size() - other.cela_cast.size();
+    	//převedu na celočíselné dělění
+
+		divisor.cela_cast.clear();
+		divisor.cela_cast.append(other.des_cast.rbegin(),other.des_cast.rend());
+		divisor.cela_cast.append(other.cela_cast);
+
+		dividet.cela_cast.clear();
+		if(divisor.cela_cast.size() > cela_cast.size()){
+			size_t num_length = divisor.cela_cast.size() - cela_cast.size();
+			dividet.cela_cast.append(des_cast.rbegin(),des_cast.rend() - num_length);
+			dividet.cela_cast.append(cela_cast);
+		}else{
+			dividet.cela_cast.append(cela_cast, cela_cast.size() - divisor.cela_cast.size(),cela_cast.npos);
+		}
+
+
+        auto get = [ this](size_t i) ->const char&{
+        	if(i <scale){
+        		i = scale - i -1;
+        		return des_cast.at(i);
+        	}else{
+        		i = i - scale;
+            	return cela_cast.at(i);
+
+        	}
+        };
+    	isPositive = isPositive == other.isPositive;
+    	int steps = (cela_cast.size() + scale) - divisor.cela_cast.size();
+
+    	if (steps < 0){//dělitel je řádově větší, takže celé tohle číso je zbytek
+    		if(div) *this = 0;
+    		return *this;
+    	}
+
+		size_t pos = 0;
+    	for(int i = steps; 0 <= i;i--){
+    		size_t tmp=0;
+    		while(dividet.cmp_ignore_sig(divisor) >= 0){
+    			tmp++;
+    			dividet -= divisor;
+    		}
+    		result.push_back(digits[tmp]);
+    		if(i > 0) dividet.cela_cast = get(i-1) + dividet.cela_cast;
+    		pos++;
+    	}
+    	if(div){
+    		cela_cast.assign(result.rbegin()+final_dec_point,result.rend());
+    		des_cast.assign(result.begin()+(result.size() - final_dec_point),result.end());
+    		scale = final_dec_point;
+    	}else{
+    		cela_cast.assign(dividet.cela_cast.rbegin()+scale,dividet.cela_cast.rend());
+    		des_cast.assign(dividet.cela_cast.begin()+(dividet.cela_cast.size() - scale),dividet.cela_cast.end());
+
+    	}
+        strip_zeroes_and_fix_scale();
     	return *this;
     }
 

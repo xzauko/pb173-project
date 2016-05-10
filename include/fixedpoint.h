@@ -573,10 +573,10 @@ struct number{
      */
     static number eval_infix(const std::string & expr){
         // xzauko number<16>::eval_infix("10::23 + 2::100010")
-        using std::string;
+        using std::string; using namespace std::literals;
         std::vector<string> operatorStack; // if functions are to be supported, this has to store strings
         unsigned int prec, oprec;
-        const string precedences[]{"+-","*/%","^","([{"}, associativity[2]{"+-*/%","^"};
+        const string precedences[]{"+-"s,"*/%"s,"^"s,"([{"s}, associativity[2]{"+-*/%"s,"^"s};
         string postfix{};
         string::const_iterator y;
         for (auto x = expr.begin(); x!=expr.end();++x){
@@ -598,20 +598,20 @@ struct number{
                     for(; precedences[oprec].find(operatorStack.back())==string::npos; ++oprec);
                     if (oprec > prec || (associativity[0].find(*x)!=string::npos && oprec==prec)){
                             postfix.push_back(' ');
-                            postfix.push_back(operatorStack.back());
+                            postfix.append(operatorStack.back());
                             operatorStack.pop_back();
                     }
                     else break;
                 }
-                operatorStack.push_back(*x);
+                operatorStack.push_back(string{*x});
                 break;
             case '(': case '[': case '{':
-                operatorStack.push_back('(');
+                operatorStack.push_back("("s);
                 break;
             case ')': case ']': case '}':
-                while(operatorStack.back()!='('){
+                while(operatorStack.back()!="("s){
                     postfix.push_back(' ');
-                    postfix.push_back(operatorStack.back());
+                    postfix.append(operatorStack.back());
                     operatorStack.pop_back();
                 }
                 operatorStack.pop_back();
@@ -801,10 +801,42 @@ number<radix> operator +(const number<radix> & lhs,
     newnum+=rhs;
     return newnum;
 }
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator +(const number<radix> & lhs, T rhs){
+    number<radix> newnum(lhs);
+    newnum+=number<radix>(rhs);
+    return newnum;
+}
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator +(T lhs, const number<radix> & rhs){
+    number<radix> newnum(lhs);
+    newnum+=rhs;
+    return newnum;
+}
 
 template<unsigned char radix>
 number<radix> operator -(const number<radix> & lhs,
                          const number<radix> & rhs){
+    number<radix> newnum(lhs);
+    newnum-=rhs;
+    return newnum;
+}
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator -(const number<radix> & lhs, T rhs){
+    number<radix> newnum(lhs);
+    newnum-=number<radix>(rhs);
+    return newnum;
+}
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator -(T lhs, const number<radix> & rhs){
     number<radix> newnum(lhs);
     newnum-=rhs;
     return newnum;
@@ -817,10 +849,42 @@ number<radix> operator *(const number<radix> & lhs,
     newnum*=rhs;
     return newnum;
 }
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator *(const number<radix> & lhs, T rhs){
+    number<radix> newnum(lhs);
+    newnum*=number<radix>(rhs);
+    return newnum;
+}
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator *(T lhs, const number<radix> & rhs){
+    number<radix> newnum(lhs);
+    newnum*=rhs;
+    return newnum;
+}
 
 template<unsigned char radix>
 number<radix> operator /(const number<radix> & lhs,
                          const number<radix> & rhs){
+    number<radix> newnum(lhs);
+    newnum/=rhs;
+    return newnum;
+}
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator /(const number<radix> & lhs, T rhs){
+    number<radix> newnum(lhs);
+    newnum/=number<radix>(rhs);
+    return newnum;
+}
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator /(T lhs, const number<radix> & rhs){
     number<radix> newnum(lhs);
     newnum/=rhs;
     return newnum;
@@ -833,24 +897,22 @@ number<radix> operator %(const number<radix> & lhs,
     newnum%=rhs;
     return newnum;
 }
-
-template<unsigned char radix>
-number<radix> operator ^(const number<radix> & lhs,
-                         const number<radix> & rhs){
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator %(const number<radix> & lhs, T rhs){
     number<radix> newnum(lhs);
-    newnum^=rhs;
+    newnum%=number<radix>(rhs);
     return newnum;
 }
-
-
-//number operator+(const number &, const std::string &); ??
-//number operator+(const std::string &, const number &); ??
-
-/*
- * Mozno aj operatory pre aritmeticky posun - bc ich nema:
- * number operator<<(const number &, int);
- * number operator>>(const number &, int);
- */
+template<unsigned char radix,
+         typename T,
+         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+number<radix> operator %(T lhs, const number<radix> & rhs){
+    number<radix> newnum(lhs);
+    newnum%=rhs;
+    return newnum;
+}
 
 template<unsigned char radix>
 std::ostream& operator<<(std::ostream& out, const number<radix> & ref){

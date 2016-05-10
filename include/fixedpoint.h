@@ -144,18 +144,21 @@ struct number{
         cela_cast{digits[0]},
         des_cast{},
         isPositive(true),
-        scale(0){
-        static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
+        scale(0)
+    {
+        static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
+        static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
     }
     /**
      * @brief number
      * @param src
      */
-    number(const std::string & src): // number<16>("18::Ged");
+    explicit number(const std::string & src): // number<16>("18::Ged");
         isPositive(src.find_first_of('-')==src.npos),
         scale(0)
     {
-        static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
+        static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
+        static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
         // basic format verification:
         if (std::count_if(
                     src.cbegin(),
@@ -245,21 +248,31 @@ struct number{
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
     number(T x):
-        number(std::string("10::")+std::to_string(x))
-    {}
+        des_cast{},
+        isPositive(x>=0),
+        scale(0)
+    {
+        static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
+        static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
+        std::string rep = std::to_string(x); // obtain string representation
+        std::reverse(rep.begin(), rep.end()); // reverse string - BIG ENDIAN storage
+        if (!isPositive) rep.pop_back(); // get rid of - sign
+#if !(defined(FIXEDPOINT_CASE_INSENSITIVE) || defined(FIXEDPOINT_CASE_SENSITIVE))
+        // only perform the following
+        // if we can't suppose anything about digits[]
+        for (auto x = rep.begin(); x!=rep.end(); ++x){
+            // convert from digits 0-9 to whatever our encoding uses
+            *x = digits[*x-'0'];
+        }
+#endif
+        if (radix == 10){
+            cela_cast = rep;
+        }
+        else{
+            cela_cast = convert_with_vector(rep,10);
+        }
+    }
 
-    /**
-     * @brief number
-     * @param x
-     */
-    /*number(unsigned long long int x){
-        static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
-        std::stringstream src("");
-        src << "10::";
-        src << x;
-        number y(number(src.str()));
-        operator=(std::move(y));
-    }*/
     /**
      * @brief number
      * @param x
@@ -267,7 +280,8 @@ struct number{
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
     number(T x, unsigned int scale = 0){
-        static_assert(radix<=MAX_RADIX && radix!=0, "fixedpoint::number's radix too high");
+        static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
+        static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
         std::stringstream src("10::");
         src<<x;
         number y(src.str());
@@ -534,15 +548,6 @@ struct number{
                 a /= b;
                 stack.push_back(std::move(a));
                 break;
-            case '^':
-                if (stack.size() < 2) throw(invalid_expression_format("^ expects 2 operands"));
-                b = std::move(stack.back());
-                stack.pop_back();
-                a = std::move(stack.back());
-                stack.pop_back();
-                a ^= b;
-                stack.push_back(std::move(a));
-                break;
             case '%':
                 if (stack.size() < 2) throw(invalid_expression_format("% expects 2 operands"));
                 b = std::move(stack.back());
@@ -569,10 +574,11 @@ struct number{
     static number eval_infix(const std::string & expr){
         // xzauko number<16>::eval_infix("10::23 + 2::100010")
         using std::string;
-        std::vector<char> operatorStack; // if functions are to be supported, this has to store strings
+        std::vector<string> operatorStack; // if functions are to be supported, this has to store strings
         unsigned int prec, oprec;
         const string precedences[]{"+-","*/%","^","([{"}, associativity[2]{"+-*/%","^"};
-        std::string postfix{};
+        string postfix{};
+        string::const_iterator y;
         for (auto x = expr.begin(); x!=expr.end();++x){
             switch(*x){
             case '+': case '-':
@@ -580,7 +586,7 @@ struct number{
             case '^': case '%':
                 // negative number sign check
                 if (*x=='-'){
-                    auto y = x;
+                    y = x;
                     ++y;
                     if ( y==expr.end()) throw(invalid_expression_format("expression ends with a -"));
                     else if(values[static_cast<int>(*y)] >= 0) postfix.push_back(*x);

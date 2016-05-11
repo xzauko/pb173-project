@@ -3,6 +3,7 @@
 #include <string>
 #include <vector> // in convert_through_native
 #include <type_traits> // SFINAE
+#include <cmath> // lround()
 #include <stdexcept> // runtime_exception
 #include <algorithm> // any, reverse, reverse_copy
 #include <iterator> // back_inserter
@@ -173,7 +174,7 @@ struct number{
      * @brief number
      * @param src
      */
-    explicit number(const std::string & src): // number<16>("18::Ged");
+    explicit number(const std::string & src):
         isPositive(src.find_first_of('-')==src.npos),
         scale(0)
     {
@@ -243,11 +244,15 @@ struct number{
             // only need to assign to members
             cela_cast = std::move(whole);
             des_cast = std::move(decimal);
+            scale = des_cast.size();
         }
         else{
             // convert from base rdx to base radix:
             // convert radix to base rdx:
-            cela_cast = convert_with_vector(whole, rdx);
+            scale = std::max(decimal.size()*std::lround(static_cast<double>(rdx)/radix), decimal.size());
+            auto res = convert_with_vector(whole, decimal, rdx, scale);
+            cela_cast = std::move(res.first);
+            des_cast = std::move(res.second);
         }
         strip_zeroes_and_fix_scale();
     }
@@ -289,7 +294,7 @@ struct number{
             cela_cast = rep;
         }
         else{
-            cela_cast = convert_with_vector(rep,10);
+            cela_cast = convert_with_vector(rep,"",10,0).first;
         }
     }
 
@@ -300,16 +305,16 @@ struct number{
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
     number(T x, unsigned int scale = 0){
+        using namespace std::literals;
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
-        std::stringstream src("10::");
-        src<<x;
-        number y(src.str());
-        operator=(std::move(y));
-        if (scale>0){
-            des_cast.resize(scale,digits[0]);
-        }
         this->scale = scale;
+        number y(("10::"s).append(std::to_string(x)));
+        operator=(std::move(y));
+        //if (scale>0){
+        //    des_cast.resize(scale,digits[0]);
+        //}
+        //this->scale = scale;
     }
 
     number(const number &) = default;
@@ -444,75 +449,92 @@ struct number{
     }
 
     number & operator *=(const number & other){
-        //čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
-        //pocet desetinych míst
-        size_t decimals = std::max(des_cast.size(), other.des_cast.size());
-        //ocekavana maximalni velikost výsledku
-        size_t size = (decimals + cela_cast.size()) + (decimals + other.cela_cast.size());
-
-
-        const number a(*this);
-        const number& b = other;
-
-        const size_t dec_point = 2 * (decimals);
-        des_cast.clear();
-        des_cast.resize(dec_point, digits[0] );
-        cela_cast.clear();
-        cela_cast.resize(size, digits[0] );
-
-        auto product = [&dec_point, this](size_t i) -> char&{
-            if(i <dec_point){
-                i = dec_point - i -1;
-                return des_cast.at(i);
-            }else{
-                i = i - dec_point;
-                return cela_cast.at(i);
-
-            }
-        };
-        auto get = [&decimals](const number &from,size_t i) -> const char&{
-            if(i <decimals){
-                i = decimals - i -1;
-                if(i < from.des_cast.size()) return from.des_cast.at(i);
-                //implicitní nuly
-                else return digits[0];
-            }else{
-                i = i - decimals;
-                if(i < from.cela_cast.size()) return from.cela_cast.at(i);
-                //implicitní nuly
-                else return digits[0];
-
-            }
-        };
-
-        const size_t p = b.cela_cast.size() + decimals;
-        const size_t q = a.cela_cast.size() + decimals;
-        for(size_t b_i = 0; b_i < p; b_i++){
-            unsigned char carry= 0;
-            for(size_t a_i = 0; a_i < q; a_i++){
-                unsigned long tmp = values[static_cast<int>(product(a_i + b_i))];
-                tmp += carry + values[static_cast<int>(get(a, a_i ))] * values[static_cast<int>(get(b, b_i))];
-                carry = tmp / radix;
-                product(a_i + b_i) = digits[tmp % radix];
-            }
-            unsigned long tmp = values[static_cast<int>(product(b_i + q - 1))];
-            tmp += carry;
-            product(b_i + q -1 ) = digits[tmp];
+        // handle sign:
+        isPositive = (isPositive == other.isPositive);
+        // trivial case - one of the numbers is (-)1 or 0:
+        if ( (cmp_ignore_sig(number(1)) == 0) ||
+             (other.cmp_ignore_sig(number()) == 0) ){
+            cela_cast = other.cela_cast;
+            des_cast = other.des_cast;
         }
+        else if ( (other.cmp_ignore_sig(number(1)) == 0) ||
+                  (cmp_ignore_sig(number()) == 0) ){
+            return *this;
+        }
+        else{
+            //čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
+            //pocet desetinych míst
+            size_t decimals = std::max(des_cast.size(), other.des_cast.size());
+            //ocekavana maximalni velikost výsledku
+            size_t size = (decimals + cela_cast.size()) + (decimals + other.cela_cast.size());
 
-        size_t pos = cela_cast.find_last_not_of(digits[0]);
-        if(pos != cela_cast.npos) pos += 1;
-        else pos = 1;
-        cela_cast.resize(pos, digits[0]);
+            const number a(*this);
+            const number& b = other;
+
+            const size_t dec_point = 2 * (decimals);
+            des_cast.clear();
+            des_cast.resize(dec_point, digits[0] );
+            cela_cast.clear();
+            cela_cast.resize(size, digits[0] );
+
+            auto product = [&dec_point, this](size_t i) -> char&{
+                if(i <dec_point){
+                    i = dec_point - i -1;
+                    return des_cast.at(i);
+                }else{
+                    i = i - dec_point;
+                    return cela_cast.at(i);
+                }
+            };
+            auto get = [&decimals](const number &from,size_t i) -> const char&{
+                if(i <decimals){
+                    i = decimals - i -1;
+                    if(i < from.des_cast.size()) return from.des_cast.at(i);
+                    //implicitní nuly
+                    else return digits[0];
+                }else{
+                    i = i - decimals;
+                    if(i < from.cela_cast.size()) return from.cela_cast.at(i);
+                    //implicitní nuly
+                    else return digits[0];
+
+                }
+            };
+
+            const size_t p = b.cela_cast.size() + decimals;
+            const size_t q = a.cela_cast.size() + decimals;
+            for(size_t b_i = 0; b_i < p; b_i++){
+                unsigned char carry= 0;
+                for(size_t a_i = 0; a_i < q; a_i++){
+                    unsigned long tmp = values[static_cast<int>(product(a_i + b_i))];
+                    tmp += carry + values[static_cast<int>(get(a, a_i ))] * values[static_cast<int>(get(b, b_i))];
+                    carry = tmp / radix;
+                    product(a_i + b_i) = digits[tmp % radix];
+                }
+                unsigned long tmp = values[static_cast<int>(product(b_i + q - 1))];
+                tmp += carry;
+                product(b_i + q -1 ) = digits[tmp];
+            }
+
+            size_t pos = cela_cast.find_last_not_of(digits[0]);
+            if(pos != cela_cast.npos) pos += 1;
+            else pos = 1;
+            cela_cast.resize(pos, digits[0]);
+        }
         strip_zeroes_and_fix_scale();
         return *this;
     }
 
     number & operator /=(const number &other){
+        // handle signs here:
+        isPositive = (isPositive == other.isPositive);
+        // handle trivial case (divide by 1):
+        if(other.cmp_ignore_sig(number(1))==0) return *this;
         return div_or_mod(other,true);
     }
 
     number & operator %=(const number &other){
+        // modulo has the sign of first operand
         return div_or_mod(other,false);
     }
 
@@ -556,20 +578,44 @@ struct number{
         return tmpResult;
     }
 
-    number& pow(number exponent){
-        number result;
-        //vyřeším záporný exponent
-        if(!exponent.isPositive){
-            //(*this) /= number(1);
-            exponent.isPositive = true;
-        }
-        //rozdělim exponent na celou část a desetinnou část
-        number fract_exp(0);
-        fract_exp.des_cast.swap(exponent.des_cast);
-        if(fract_exp != 0){
+    number& pow(const number & exponent){
+        // kontrola desatinnej casti:
+        if(! std::all_of(exponent.des_cast.cbegin(),
+                         exponent.des_cast.cend(),
+                         [](const char x){return x==digits[0];}
+                         )){
             throw unsuported_operation("Only integer exponent is suported for power function!");
         }
-        int_pow(exponent);
+        // fast path for exponent 0
+        if(exponent.cmp_ignore_sig(number())){
+            operator=(number(1));
+        }
+        // fast path for base 0 and (-)1
+        else if(cmp_ignore_sig(number())==0 || cmp_ignore_sig(number(1))){
+            if (! isPositive) { // 0 is treated as positive, therefore must be -1
+                isPositive = ((exponent%number(2)).cmp_ignore_sig(number())==0);
+            }
+        }
+        else{
+            //vyřeším záporný exponent
+            number expCopy(exponent);
+            number others(1), help;
+            number one(1),two(2);
+            if(!expCopy.isPositive){
+                throw unsuported_operation("CAVEAT: Malfunctioning division prohibits negative exponent for power");
+                //(*this) /= number(1); // DOES NOTHING!
+                //expCopy.isPositive = true;
+            }
+            //int_pow(std::move(expCopy));
+            // divide and conquer - halve the exponent in each pass
+            while(expCopy > one){
+                if(expCopy%two == one) others *= (*this);
+                help = (*this);
+                operator*=(help);
+                expCopy/=two;
+            }
+            operator*=(others); //
+        }
         strip_zeroes_and_fix_scale();
         return *this;
     }
@@ -636,8 +682,7 @@ struct number{
                 a -= b;
                 stack.push_back(std::move(a));
                 break;
-            // NOT IMPLEMENTED OPERATORS:
-            /*case '*':
+            case '*':
                 if (stack.size() < 2) throw(invalid_expression_format("* expects 2 operands"));
                 b = std::move(stack.back());
                 stack.pop_back();
@@ -663,7 +708,7 @@ struct number{
                 stack.pop_back();
                 a %= b;
                 stack.push_back(std::move(a));
-                break;*/
+                break;
             default:
                 tmp.push_back(*x);
             }
@@ -797,18 +842,15 @@ private:
     /**
      * @brief rise this number to the power of positive integer exponent
      * @param exponent nubmer representing positive integer value
-     * @return this
      */
-    number& int_pow(number exponent){
+    void int_pow(number && exponent){
         number nula(0);
         number orig(*this);
         //naivní algoritmus
-        while(exponent.cmp_ignore_sig(nula) > 0){
+        while(exponent > nula){
             (*this) *= orig;
-            exponent-=1;
+            --exponent;
         }
-
-        return *this;
     }
 
     /**
@@ -836,6 +878,7 @@ private:
         dividend.cela_cast.clear();
         if(divisor.cela_cast.size() > cela_cast.size()){
             size_t num_length = divisor.cela_cast.size() - cela_cast.size();
+            if (des_cast.size() < num_length) des_cast.resize(num_length,digits[0]);
             dividend.cela_cast.append(des_cast.rbegin(),des_cast.rend() - num_length);
             dividend.cela_cast.append(cela_cast);
         }else{
@@ -853,7 +896,7 @@ private:
 
             }
         };
-        isPositive = isPositive == other.isPositive;
+        //isPositive = isPositive == other.isPositive;
         //počet kroků dělení
         int steps = (cela_cast.size() + scale) - divisor.cela_cast.size();
 
@@ -887,7 +930,6 @@ private:
         return *this;
     }
 
-
     /**
      * @brief strip_zeroes_and_fix_scale Strip leading 0 and maintain scale
      * If value of whole part is equal to 0, then strips all but the last
@@ -895,50 +937,86 @@ private:
      * If scale is set as nonzero, it strips or extends the "decimal" part
      * to lenght equal to scale (extends with digit of value 0, stripping
      * truncates), otherwise always truncates any trailing zeroes.
+     * If only one digit stays, that is a singular 0 in cela_cast,
+     * also sets isPositive to true, so we are consistent with sign of zero.
      */
     void strip_zeroes_and_fix_scale(){
         std::size_t pos;
-        if((pos=cela_cast.find_last_not_of(digits[0]))!=cela_cast.npos){
+        bool isZero;
+        if((pos=cela_cast.find_last_not_of(digits[0])) != cela_cast.npos){
             if (pos>=1) cela_cast.resize(pos+1,digits[0]);
+            isZero = false;
         }
         else{
             cela_cast.resize(1,digits[0]);
+            isZero = true;
         }
         // leading zeroes stripped
         if (scale != 0){
             des_cast.resize(scale, digits[0]);
         }
         else {
-            pos = des_cast.find_last_not_of(digits[0]);
-            if (pos == des_cast.npos) des_cast.clear();
-            else des_cast.resize(pos+1,digits[0]);
+            if ((pos=des_cast.find_last_not_of(digits[0])) == des_cast.npos){
+                des_cast.clear();
+                // isZero stays as is true && isZero always evals as true
+            }
+            else {
+                des_cast.resize(pos+1,digits[0]);
+                isZero = false; // false && isZero always evals as false
+            }
         }
+        if (isZero) isPositive = true; // 0 is treated as positive
         // trailing zeroes truncated
     }
 
     /**
-     * @brief convert_through_native Converts string of whole part between bases
+     * @brief convert_through_native Converts strings of whole and decimal parts
      * <p>
      * Conversion of string a to string b is achieved by utilizing
-     * the muladd_vector_uint_uint method. This method merely handles
+     * the muladd_vector_uint_uint method for the whole part.
+     * For the whole part this method merely handles
      * digit -> value and value -> digit conversion and related tasks.
+     * For the decimal part this function also performs minor tasks related to
+     * conversion
      * <p>
-     * @param src   Source string to convert
+     * @param srcWhole   Source string to convert - whole part as BIG ENDIAN
+     * @param srcDed     Source string to convert - decimal part as LITTLE ENDIAN
      * @param rdx   Number base (radix) of source string
-     * @return  Newly constructed string holding converted number representation
+     * @param scale Number of decimal places to compute
+     * @return  Pair of holding converted number representation
      */
-    static std::string convert_with_vector(
-            const std::string & src,
-            unsigned int rdx){
+    static std::pair<std::string, std::string> convert_with_vector(
+            const std::string & srcWhole,
+            const std::string & srcDec,
+            unsigned int rdx,
+            unsigned int scale){
         std::vector<unsigned int> vec;
-        for(auto x=src.crbegin(); x!=src.crend();++x){
+        for(auto x=srcWhole.crbegin(); x!=srcWhole.crend();++x){
             muladd_vector_uint_uint(vec,rdx,values[static_cast<int>(*x)]);
         }
-        std::string retVal;
+        std::string retValWhole;
         for (auto x : vec){
-            retVal.push_back(digits[x]);
+            retValWhole.push_back(digits[x]);
         }
-        return retVal;
+        std::string retValDec;
+        vec.clear();
+        for(auto x=srcDec.crbegin(); x!=srcDec.crend();++x){
+            vec.push_back(values[static_cast<int>(*x)]);
+        }
+        std::size_t orig_size = vec.size();
+        unsigned int digitConverter = 0;
+        for(std::size_t i=0;i<scale;++i){
+            muladd_vector_uint_uint(vec,radix,0,rdx);
+            digitConverter = 0;
+            while(vec.size() > orig_size){
+                // does what muladd_vector_uint_uint does, but on small scale
+                digitConverter *=rdx;
+                digitConverter += vec.back();
+                vec.pop_back();
+            }
+            retValDec.push_back(digits[digitConverter]);
+        }
+        return make_pair(retValWhole, retValDec);
     }
 
     /**
@@ -964,7 +1042,10 @@ private:
             *x = carry % max_element; // lower half
             carry /= max_element; // upper half
         }
-        if (carry!=0) vec.push_back(carry);
+        while (carry!=0) {
+            vec.push_back(carry % max_element);
+            carry /= max_element;
+        }
         // add:
         carry = add;
         for (auto x = vec.begin(); x != vec.end(); ++x){
@@ -972,8 +1053,9 @@ private:
             *x = carry % max_element;
             carry /= max_element;
         }
-        if (carry > 0){
-            vec.push_back(carry);
+        while (carry!=0) {
+            vec.push_back(carry % max_element);
+            carry /= max_element;
         }
     }
 

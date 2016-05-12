@@ -249,7 +249,7 @@ struct number{
         else{
             // convert from base rdx to base radix:
             // convert radix to base rdx:
-            scale = std::max(decimal.size()*std::lround(static_cast<double>(rdx)/radix), decimal.size());
+            scale = decimal.size()*std::ceil(static_cast<double>(rdx)/radix);
             auto res = convert_with_vector(whole, decimal, rdx, scale);
             cela_cast = std::move(res.first);
             des_cast = std::move(res.second);
@@ -308,13 +308,10 @@ struct number{
         using namespace std::literals;
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
-        this->scale = scale;
         number y(("10::"s).append(std::to_string(x)));
         operator=(std::move(y));
-        //if (scale>0){
-        //    des_cast.resize(scale,digits[0]);
-        //}
-        //this->scale = scale;
+        this->scale = scale;
+        strip_zeroes_and_fix_scale();
     }
 
     number(const number &) = default;
@@ -452,19 +449,60 @@ struct number{
         // handle sign:
         isPositive = (isPositive == other.isPositive);
         // trivial case - one of the numbers is (-)1 or 0:
-        if ( (cmp_ignore_sig(number(1)) == 0) ||
-             (other.cmp_ignore_sig(number()) == 0) ){
+        number one(1), zero(0);
+        if ( (cmp_ignore_sig(one) == 0) ||
+             (other.cmp_ignore_sig(zero) == 0) ){
             cela_cast = other.cela_cast;
             des_cast = other.des_cast;
         }
-        else if ( (other.cmp_ignore_sig(number(1)) == 0) ||
-                  (cmp_ignore_sig(number()) == 0) ){
+        else if ( (other.cmp_ignore_sig(one) == 0) ||
+                  (cmp_ignore_sig(zero) == 0) ){
             return *this;
         }
         else{
+            // Knuth vol.2 p.253 long multiplication (we use reverse indexing):
+            // covert strings to to vectors (with the values)
+            std::vector<unsigned int> our, their;
+            unsigned int productscale = des_cast.size() + other.des_cast.size();
+            for (auto rit = des_cast.crbegin(); rit != des_cast.crend(); ++rit){
+                our.push_back(values[static_cast<int>(*rit)]);
+            }
+            for (auto x : cela_cast){
+                our.push_back(values[static_cast<int>(x)]);
+            }
+            for (auto rit = other.des_cast.crbegin(); rit != other.des_cast.crend(); ++rit){
+                their.push_back(values[static_cast<int>(*rit)]);
+            }
+            for (auto x : other.cela_cast){
+                their.push_back(values[static_cast<int>(x)]);
+            }
+            unsigned int i,j; // i - our index, j - their index
+            unsigned int carry=0; // doubles as t and k of algo
+            std::vector<unsigned int> product(their.size()+our.size(),0);
+            for(j = 0;j < their.size(); ++j){
+                for(i=0; i<our.size(); ++i){
+                    carry += our[i]*their[j]+product[i+j];
+                    product[i+j] = carry % radix;
+                    carry /= radix;
+                }
+                if (carry > 0){ // handle carry
+                    product[i+j] += carry;
+                    carry = 0;
+                }
+            }
+            // convert back to digits
+            des_cast.clear();
+            cela_cast.clear();
+            for (unsigned int i = productscale; i<product.size(); ++i){
+                cela_cast.push_back(digits[product[i]]);
+            }
+            product.resize(productscale); // leave the decimal part of product
+            for (auto rit = product.crbegin(); rit != product.crend(); ++rit){
+                des_cast.push_back(digits[*rit]);
+            }
             //čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
             //pocet desetinych míst
-            size_t decimals = std::max(des_cast.size(), other.des_cast.size());
+            /*size_t decimals = std::max(des_cast.size(), other.des_cast.size());
             //ocekavana maximalni velikost výsledku
             size_t size = (decimals + cela_cast.size()) + (decimals + other.cela_cast.size());
 
@@ -519,7 +557,7 @@ struct number{
             size_t pos = cela_cast.find_last_not_of(digits[0]);
             if(pos != cela_cast.npos) pos += 1;
             else pos = 1;
-            cela_cast.resize(pos, digits[0]);
+            cela_cast.resize(pos, digits[0]);*/
         }
         strip_zeroes_and_fix_scale();
         return *this;
@@ -944,7 +982,7 @@ private:
         std::size_t pos;
         bool isZero;
         if((pos=cela_cast.find_last_not_of(digits[0])) != cela_cast.npos){
-            if (pos>=1) cela_cast.resize(pos+1,digits[0]);
+            cela_cast.resize(pos+1,digits[0]);
             isZero = false;
         }
         else{

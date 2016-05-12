@@ -479,15 +479,16 @@ struct number{
                 carry = tmp / radix;
                 product(a_i + b_i) = digits[tmp % radix];
             }
-            unsigned long tmp = values[static_cast<int>(product(b_i + q - 1))];
+            unsigned long tmp = values[static_cast<int>(product(b_i + q))];
             tmp += carry;
-            product(b_i + q -1 ) = digits[tmp];
+            product(b_i + q) = digits[tmp];
         }
 
         size_t pos = cela_cast.find_last_not_of(digits[0]);
         if(pos != cela_cast.npos) pos += 1;
         else pos = 1;
         cela_cast.resize(pos, digits[0]);
+        isPositive = (isPositive == other.isPositive);
         strip_zeroes_and_fix_scale();
         return *this;
     }
@@ -521,15 +522,9 @@ struct number{
     }
 
     bool operator ==(const number & rhs) const{
-        bool tmpResult = ( isPositive == rhs.isPositive &&
-                           cela_cast == rhs.cela_cast );
+        bool tmpResult = ( isPositive == rhs.isPositive);
         if ( tmpResult ){
-            if ( des_cast.size() == rhs.des_cast.size() ){
-                tmpResult = ( des_cast == rhs.des_cast );
-            }
-            else {
-                tmpResult = false;
-            }
+            return cmp_ignore_sig(rhs) == 0;
         }
         return tmpResult;
     }
@@ -633,18 +628,25 @@ private:
                 return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
             }
             //cela cast je stejna, rozhodne desetina cast
-            size_t limit = (des_cast.size() > other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
+            size_t limit = (des_cast.size() < other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
             while(pos < limit){
                 if(values[static_cast<int>(des_cast[pos])] != values[static_cast<int>(other.des_cast[pos])]){
                     return (values[static_cast<int>(des_cast[pos])] > values[static_cast<int>(other.des_cast[pos])]) ? 1 : -1;
                 }
                 pos++;
             }
-            if(des_cast.size() != other.des_cast.size()){
-                return (des_cast.size() > other.des_cast.size()) ? 1 : -1;
-            }else{
-                return 0;
+            //porovnání proti implicitním nulám
+            if(other.des_cast.size() > limit){
+                for (;pos < other.des_cast.size();pos++) {
+                    if (values[static_cast<int>(other.des_cast[pos])] > 0) return -1;
+                }
             }
+            if(des_cast.size() > limit){
+                for (;pos < des_cast.size();pos++) {
+                    if (values[static_cast<int>(des_cast[pos])] > 0) return 1;
+                }
+            }
+            return 0;
         }
     }
 
@@ -707,7 +709,7 @@ private:
 
             }
         };
-        isPositive = isPositive == other.isPositive;
+
         //počet kroků dělení
         int steps = (cela_cast.size() + scale) - divisor.cela_cast.size();
 
@@ -732,10 +734,10 @@ private:
             cela_cast.assign(result.rbegin()+final_dec_point,result.rend());
             des_cast.assign(result.begin()+(result.size() - final_dec_point),result.end());
             scale = final_dec_point;
+            isPositive = (isPositive == other.isPositive);
         }else{
             cela_cast.assign(dividend.cela_cast.rbegin()+scale,dividend.cela_cast.rend());
             des_cast.assign(dividend.cela_cast.begin()+(dividend.cela_cast.size() - scale),dividend.cela_cast.end());
-
         }
         strip_zeroes_and_fix_scale();
         return *this;

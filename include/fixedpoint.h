@@ -634,18 +634,25 @@ private:
                 return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
             }
             //cela cast je stejna, rozhodne desetina cast
-            size_t limit = (des_cast.size() > other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
+            size_t limit = (des_cast.size() < other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
             while(pos < limit){
                 if(values[static_cast<int>(des_cast[pos])] != values[static_cast<int>(other.des_cast[pos])]){
                     return (values[static_cast<int>(des_cast[pos])] > values[static_cast<int>(other.des_cast[pos])]) ? 1 : -1;
                 }
                 pos++;
             }
-            if(des_cast.size() != other.des_cast.size()){
-                return (des_cast.size() > other.des_cast.size()) ? 1 : -1;
-            }else{
-                return 0;
+            //porovnání proti implicitním nulám
+            if(other.des_cast.size() > limit){
+                for (;pos < other.des_cast.size();pos++) {
+                    if (values[static_cast<int>(other.des_cast[pos])] > 0) return -1;
+                }
             }
+            if(des_cast.size() > limit){
+                for (;pos < des_cast.size();pos++) {
+                    if (values[static_cast<int>(des_cast[pos])] > 0) return 1;
+                }
+            }
+            return 0;
         }
     }
 

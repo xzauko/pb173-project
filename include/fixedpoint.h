@@ -522,15 +522,9 @@ struct number{
     }
 
     bool operator ==(const number & rhs) const{
-        bool tmpResult = ( isPositive == rhs.isPositive &&
-                           cela_cast == rhs.cela_cast );
+        bool tmpResult = ( isPositive == rhs.isPositive);
         if ( tmpResult ){
-            if ( des_cast.size() == rhs.des_cast.size() ){
-                tmpResult = ( des_cast == rhs.des_cast );
-            }
-            else {
-                tmpResult = false;
-            }
+            return cmp_ignore_sig(rhs) == 0;
         }
         return tmpResult;
     }

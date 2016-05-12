@@ -549,26 +549,15 @@ struct number{
                     carry = tmp / radix;
                     product(a_i + b_i) = digits[tmp % radix];
                 }
-                unsigned long tmp = values[static_cast<int>(product(b_i + q - 1))];
+                unsigned long tmp = values[static_cast<int>(product(b_i + q))];
                 tmp += carry;
-                product(b_i + q -1 ) = digits[tmp];
+                product(b_i + q) = digits[tmp];
             }
-
             size_t pos = cela_cast.find_last_not_of(digits[0]);
             if(pos != cela_cast.npos) pos += 1;
             else pos = 1;
             cela_cast.resize(pos, digits[0]);
         }
-            unsigned long tmp = values[static_cast<int>(product(b_i + q))];
-            tmp += carry;
-            product(b_i + q) = digits[tmp];
-        }
-
-        size_t pos = cela_cast.find_last_not_of(digits[0]);
-        if(pos != cela_cast.npos) pos += 1;
-        else pos = 1;
-        cela_cast.resize(pos, digits[0]);
-        isPositive = (isPositive == other.isPositive);
         strip_zeroes_and_fix_scale();
         return *this;
     }
@@ -629,11 +618,11 @@ struct number{
             throw unsuported_operation("Only integer exponent is suported for power function!");
         }
         // fast path for exponent 0
-        if(exponent.cmp_ignore_sig(number())){
+        if(exponent.cmp_ignore_sig(number()) == 0){
             operator=(number(1));
         }
-        // fast path for base 0 and (-)1
-        else if(cmp_ignore_sig(number())==0 || cmp_ignore_sig(number(1))){
+        // fast path for powerbases 0 and (-)1
+        else if(cmp_ignore_sig(number())==0 || cmp_ignore_sig(number(1))==0){
             if (! isPositive) { // 0 is treated as positive, therefore must be -1
                 isPositive = ((exponent%number(2)).cmp_ignore_sig(number())==0);
             }
@@ -648,7 +637,6 @@ struct number{
                 //(*this) /= number(1); // DOES NOTHING!
                 //expCopy.isPositive = true;
             }
-            //int_pow(std::move(expCopy));
             // divide and conquer - halve the exponent in each pass
             while(expCopy > one){
                 if(expCopy%two == one) others *= (*this);
@@ -656,7 +644,7 @@ struct number{
                 operator*=(help);
                 expCopy/=two;
             }
-            operator*=(others); //
+            operator*=(others);
         }
         strip_zeroes_and_fix_scale();
         return *this;
@@ -897,7 +885,7 @@ private:
         number orig(*this);
         //naivní algoritmus
         while(exponent > nula){
-            (*this) *= orig;
+            operator*=(orig);
             --exponent;
         }
     }
@@ -1110,12 +1098,6 @@ private:
 };
 
 template<unsigned char radix>
-number<radix> pow(const number<radix>& base,const number<radix> & exponent){
-    number<radix> result(base);
-    return result.pow(exponent);
-}
-
-template<unsigned char radix>
 bool operator <=(const number<radix>& lhs,const number<radix> & rhs){
     return ( ! ( rhs < lhs ) );
 }
@@ -1295,5 +1277,15 @@ using base64 = number<64>;
 
 } // namespace fixedpoint
 
+namespace std{
+
+template<unsigned char radix>
+fixedpoint::number<radix> pow(const fixedpoint::number<radix> & base,
+                              const fixedpoint::number<radix> & exponent){
+    fixedpoint::number<radix> result(base);
+    return result.pow(exponent);
+}
+
+} // namespace std
 #endif // FIXEDPOINT_H
 

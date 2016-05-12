@@ -472,22 +472,25 @@ struct number{
         const size_t p = b.cela_cast.size() + decimals;
         const size_t q = a.cela_cast.size() + decimals;
     	for(size_t b_i = 0; b_i < p; b_i++){
-    		unsigned char carry= 0;
+    		unsigned long carry= 0;
     		for(size_t a_i = 0; a_i < q; a_i++){
     			unsigned long tmp = values[static_cast<int>(product(a_i + b_i))];
-    			tmp += carry + values[static_cast<int>(get(a, a_i ))] * values[static_cast<int>(get(b, b_i))];
+    			unsigned long x=values[static_cast<int>(get(a, a_i ))];
+    			unsigned long y=values[static_cast<int>(get(b, b_i))];
+    			tmp += carry + x * y;
     			carry = tmp / radix;
     			product(a_i + b_i) = digits[tmp % radix];
     		}
-			unsigned long tmp = values[static_cast<int>(product(b_i + q - 1))];
+			unsigned long tmp = values[static_cast<int>(product(b_i + q ))];
     		tmp += carry;
-    		product(b_i + q -1 ) = digits[tmp];
+    		product(b_i + q ) = digits[tmp];
     	}
 
     	size_t pos = cela_cast.find_last_not_of(digits[0]);
     	if(pos != cela_cast.npos) pos += 1;
     	else pos = 1;
     	cela_cast.resize(pos, digits[0]);
+    	isPositive = isPositive == other.isPositive;
         strip_zeroes_and_fix_scale();
     	return *this;
     }
@@ -704,7 +707,7 @@ private:
 
         	}
         };
-    	isPositive = isPositive == other.isPositive;
+
     	//počet kroků dělení
     	int steps = (cela_cast.size() + scale) - divisor.cela_cast.size();
 
@@ -729,6 +732,7 @@ private:
     		cela_cast.assign(result.rbegin()+final_dec_point,result.rend());
     		des_cast.assign(result.begin()+(result.size() - final_dec_point),result.end());
     		scale = final_dec_point;
+    		isPositive = isPositive == other.isPositive;
     	}else{
     		cela_cast.assign(dividend.cela_cast.rbegin()+scale,dividend.cela_cast.rend());
     		des_cast.assign(dividend.cela_cast.begin()+(dividend.cela_cast.size() - scale),dividend.cela_cast.end());

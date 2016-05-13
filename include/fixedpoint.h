@@ -1,9 +1,10 @@
 #ifndef FIXEDPOINT_H
 #define FIXEDPOINT_H
+#include <iostream> // cerr
 #include <string>
 #include <vector> // in convert_through_native
 #include <type_traits> // SFINAE
-#include <cmath> // lround()
+#include <cmath> // floor, ceil
 #include <stdexcept> // runtime_exception
 #include <algorithm> // any, reverse, reverse_copy
 #include <iterator> // back_inserter
@@ -101,8 +102,8 @@ struct invalid_expression_format: public std::runtime_error{
  * If this exception is thrown, it means that a string supposed to encode
  * a number specifies a radix that is out of the supported range of radixes.
  */
-struct radix_too_high: public std::runtime_error{
-    radix_too_high():std::runtime_error("the specified radix is too high"){}
+struct radix_invalid: public std::runtime_error{
+    radix_invalid():std::runtime_error("the specified radix is too high or lower than 2"){}
 };
 
 /**
@@ -174,9 +175,9 @@ struct number{
      * @brief number
      * @param src
      */
-    explicit number(const std::string & src):
+    explicit number(const std::string & src, unsigned int scale = 0):
         isPositive(src.find_first_of('-')==src.npos),
-        scale(0)
+        scale(scale)
     {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
@@ -201,8 +202,8 @@ struct number{
                 ++start;
             }
             x >> rdx; // radix is always specified as decimal number
-            if ( rdx > MAX_RADIX ) {
-                throw(radix_too_high());
+            if ( rdx > MAX_RADIX || rdx < 2 ) {
+                throw(radix_invalid());
             }
             ++start; // goes to second colon
             if (*start != ':'){
@@ -244,13 +245,13 @@ struct number{
             // only need to assign to members
             cela_cast = std::move(whole);
             des_cast = std::move(decimal);
-            scale = des_cast.size();
+            if (scale == 0) this->scale = des_cast.size();
         }
         else{
             // convert from base rdx to base radix:
             // convert radix to base rdx:
-            scale = decimal.size()*std::ceil(static_cast<double>(rdx)/radix);
-            auto res = convert_with_vector(whole, decimal, rdx, scale);
+            if (scale == 0) this->scale = decimal.size()*std::ceil(static_cast<double>(rdx)/radix);
+            auto res = convert_with_vector(whole, decimal, rdx, this->scale);
             cela_cast = std::move(res.first);
             des_cast = std::move(res.second);
         }
@@ -296,6 +297,7 @@ struct number{
         else{
             cela_cast = convert_with_vector(rep,"",10,0).first;
         }
+        strip_zeroes_and_fix_scale();
     }
 
     /**
@@ -304,13 +306,51 @@ struct number{
      * @param scale
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
-    number(T x, unsigned int scale = 0){
-        using namespace std::literals;
+    number(T x, unsigned int scale = 5):
+        isPositive(x>=0),
+        scale(scale)
+    {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
-        number y(("10::"s).append(std::to_string(x)));
-        operator=(std::move(y));
-        this->scale = scale;
+        if (scale > 19){
+            std::cerr << "Max scale for floating point constructor is 19!" << std::flush;
+            scale = 19;
+            this->scale = 19;
+        }
+        if (x < 0) x*=-1;
+        std::string whole, decimal;
+        whole = std::to_string(std::floor(x));
+        if (whole.find_first_of('.') != std::string::npos) {
+            whole.resize(whole.find_first_of('.'),'0');
+        }
+        std::reverse(whole.begin(), whole.end()); // reverse string - BIG ENDIAN storage
+        x -= std::floor(x);
+        for (int i = std::min(scale, static_cast<unsigned>(std::ceil(10.0/radix))); i>=0; --i) x*=10;
+        decimal = std::to_string(std::floor(x));
+        if (decimal.find_first_of('.') != std::string::npos) {
+            decimal.resize(decimal.find_first_of('.'),'0');
+        }
+#if !(defined(FIXEDPOINT_CASE_INSENSITIVE) || defined(FIXEDPOINT_CASE_SENSITIVE))
+        // only perform the following
+        // if we can't suppose anything about digits[]
+        for (auto x = whole.begin(); x!=whole.end(); ++x){
+            // convert from digits 0-9 to whatever our encoding uses
+            *x = digits[*x-'0'];
+        }
+        for (auto x = decimal.begin(); x!=decimal.end(); ++x){
+            // convert from digits 0-9 to whatever our encoding uses
+            *x = digits[*x-'0'];
+        }
+#endif
+        if (radix == 10){
+            cela_cast = whole;
+            des_cast = decimal;
+        }
+        else{
+            auto res = convert_with_vector(whole,decimal,10,this->scale);
+            cela_cast = std::move(res.first);
+            des_cast = std::move(res.second);
+        }
         strip_zeroes_and_fix_scale();
     }
 
@@ -990,9 +1030,10 @@ private:
         // leading zeroes stripped
         if (scale != 0){
             des_cast.resize(scale, digits[0]);
+            if ((pos=des_cast.find_first_not_of(digits[0])) != des_cast.npos) isZero = false;
         }
         else {
-            if ((pos=des_cast.find_last_not_of(digits[0])) == des_cast.npos){
+            if ((pos=des_cast.find_first_not_of(digits[0])) == des_cast.npos){
                 des_cast.clear();
                 // isZero stays as is true && isZero always evals as true
             }

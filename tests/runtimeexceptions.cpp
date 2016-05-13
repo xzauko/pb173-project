@@ -7,3 +7,4 @@
 
 using namespace fixedpoint;
 using namespace std::literals;
+

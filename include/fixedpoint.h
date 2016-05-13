@@ -378,7 +378,7 @@ struct number{
             size_t boundary = std::min(des_cast.size(), other.des_cast.size());
 
             // DESATINNA CAST
-            if (des_cast.size() > other.des_cast.size()){
+            if (des_cast.size() < other.des_cast.size()){
                 // possibly partial copy
                 des_cast.append(other.des_cast,
                                 boundary,
@@ -417,6 +417,7 @@ struct number{
         }
         // At worst 1 partial copy (extending the scale)
         // or whatever -= does
+        scale = std::max(scale, other.scale);
         strip_zeroes_and_fix_scale();
         return *this;
     }
@@ -480,6 +481,7 @@ struct number{
 
         }
         cela_cast.resize(first_digit + 1, digits[0] );
+        scale = std::max(scale, other.scale);
         strip_zeroes_and_fix_scale();
         // At worst 1 copy
         // or 1 copy and whatever += does
@@ -599,6 +601,7 @@ struct number{
             else pos = 1;
             cela_cast.resize(pos, digits[0]);
         }
+        scale = std::max(scale, other.scale);
         strip_zeroes_and_fix_scale();
         return *this;
     }
@@ -1004,19 +1007,32 @@ private:
         number divisor;
         number dividend;
         //oba posunu tak, abych měl celá čísla, takže si uložím kam pak posunout výsledek
-        long long int final_dec_point = scale;
-        final_dec_point -= other.scale;
+        long long int final_dec_point = des_cast.size();
+        final_dec_point -= other.des_cast.size();
         //převedu na celočíselné dělění
 
+        //dělitel posunu o počet des. míst do leva
         divisor.cela_cast.clear();
+        //nejnižsí indexi jsou nejmenší, takže první nakopiruju obrácenou des_cast
         divisor.cela_cast.append(other.des_cast.rbegin(),other.des_cast.rend());
+        //za ni celou část
         divisor.cela_cast.append(other.cela_cast);
 
         dividend.cela_cast.clear();
-        if(divisor.cela_cast.size() > cela_cast.size()){
-            size_t num_length = divisor.cela_cast.size() - cela_cast.size();
-            if (des_cast.size() < num_length) des_cast.resize(num_length,digits[0]);
-            dividend.cela_cast.append(des_cast.rbegin(),des_cast.rend() - num_length);
+        if(divisor.cela_cast.size() > cela_cast.size()){//pokud počet míst celé části dělence nestačí
+            //potrebuji des_length míst z des. části
+            size_t des_length = divisor.cela_cast.size() - cela_cast.size();
+            if(des_cast.size()<des_length){
+                //doplním implicitní nuly
+                dividend.cela_cast.append(des_length - des_cast.size(),digits[0]);
+                dividend.cela_cast.append(des_cast.rbegin(),des_cast.rend());
+            }else{
+                //doplním nejvyššími des_length pozicemi des. části
+                std::string tmp( des_cast, 0,des_length);
+                std::reverse(tmp.begin(),tmp.end());
+
+                dividend.cela_cast.append(tmp);
+            }
             dividend.cela_cast.append(cela_cast);
         }else{
             dividend.cela_cast.append(cela_cast, cela_cast.size() - divisor.cela_cast.size(),cela_cast.npos);
@@ -1024,17 +1040,20 @@ private:
 
         //pomocná funkce pro spojitý přístup k prvkům čísla
         auto get = [ this](size_t i) ->const char&{
-            if(i <scale){
-                i = scale - i -1;
+            if(i >= cela_cast.size()){
+                i = i - cela_cast.size();
+                //implicitní nuly
+                if(i >= des_cast.size() ) return digits[0];
                 return des_cast.at(i);
             }else{
-                i = i - scale;
+                i = cela_cast.size() - i;
                 return cela_cast.at(i);
 
             }
         };
         //počet kroků dělení
-        int steps = (cela_cast.size() + scale) - divisor.cela_cast.size();
+        //int steps = (cela_cast.size() + des_cast.size()) - divisor.cela_cast.size();
+        int steps = cela_cast.size()-other.cela_cast.size();
 
         if (steps < 0){//dělitel je řádově větší, takže celé tohle číso je zbytek
             if(div) *this = 0;
@@ -1043,24 +1062,37 @@ private:
 
         //pozice právě počítané číslice výsledku výsledku
         size_t pos = 0;
-        for(int i = steps; 0 <= i;i--){
+        for(int i = 0; i <= steps;i++){
             size_t tmp=0;
             while(dividend.cmp_ignore_sig(divisor) >= 0){
                 tmp++;
                 dividend -= divisor;
             }
             result.push_back(digits[tmp]);
-            if(i > 0) dividend.cela_cast = get(i-1) + dividend.cela_cast;
+            dividend.cela_cast = get(divisor.cela_cast.size() + i) + dividend.cela_cast;
             pos++;
         }
         if(div){
-            cela_cast.assign(result.rbegin()+final_dec_point,result.rend());
-            des_cast.assign(result.begin()+(result.size() - final_dec_point),result.end());
-            scale = final_dec_point;
+            cela_cast.assign(result.rbegin(),result.rend());
+            //celočíselné dělení
+            des_cast.clear();
+
             isPositive = (isPositive == other.isPositive);
         }else{
-            cela_cast.assign(dividend.cela_cast.rbegin()+scale,dividend.cela_cast.rend());
-            des_cast.assign(dividend.cela_cast.begin()+(dividend.cela_cast.size() - scale),dividend.cela_cast.end());
+            //odčítání mohlo zahodit implicitní nuly které možná budu potřebovat
+            if( divisor.cela_cast.size() > dividend.cela_cast.size()) dividend.cela_cast.resize(divisor.cela_cast.size(),digits[0]);
+
+            if(dividend.cela_cast.size() > other.des_cast.size()){
+                cela_cast.assign(dividend.cela_cast.substr(other.des_cast.size()+1));
+                std::string tmp = dividend.cela_cast.substr(0,other.des_cast.size()+1);
+                std::reverse(tmp.begin(),tmp.end());
+                if(other.des_cast.size()<des_cast.size()) tmp.append(des_cast.substr(other.des_cast.size()+1));
+                des_cast.assign(tmp);
+            }else{
+                cela_cast.clear();
+                cela_cast.append(other.des_cast.size() - dividend.cela_cast.size(),digits[0]);
+                cela_cast.append(dividend.cela_cast);
+            }
         }
         strip_zeroes_and_fix_scale();
         return *this;

@@ -179,6 +179,7 @@ struct number{
         isPositive(src.find_first_of('-')==src.npos),
         scale(scale)
     {
+        using namespace std::literals;
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
         // basic format verification:
@@ -187,7 +188,7 @@ struct number{
                     src.cend(),
                     [](const char c){return values[static_cast<int>(c)]==-2;}
                     ) > 1){
-            throw(invalid_number_format("contains more than one decimal separator"));
+            throw(invalid_number_format(("contains more than one decimal separator"s).append(src)));
         }
         auto start = src.cbegin();
         std::size_t rdx = radix;
@@ -306,7 +307,7 @@ struct number{
      * @param scale
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
-    number(T x, unsigned int scale = 5):
+    explicit number(T x, unsigned int scale = 5):
         isPositive(x>=0),
         scale(scale)
     {
@@ -690,6 +691,32 @@ struct number{
         return *this;
     }
 
+    number& floor(){
+        if( !std::all_of( des_cast.cbegin(),
+                          des_cast.cend(),
+                          [](char x){return x==digits[0];}) ){
+            des_cast.clear();
+            scale = 0;
+            if (! isPositive){
+                operator--();
+            }
+        }
+        return *this;
+    }
+
+    number& ceil(){
+        if( !std::all_of( des_cast.cbegin(),
+                          des_cast.cend(),
+                          [](char x){return x==digits[0];}) ){
+            des_cast.clear();
+            scale = 0;
+            if (isPositive){
+                operator++();
+            }
+        }
+        return *this;
+    }
+
     /**
      * @brief str   returns string representation of the object
      * @return  a newly constructed string
@@ -715,74 +742,50 @@ struct number{
      * @return
      */
     static number eval_postfix(const std::string & expr){
+        using namespace std::literals;
         std::vector<number> stack;
+        std::istringstream tokenizer(expr);
         std::string tmp{};
-        number a,b;
-        // for supporting functions needs a more sofisticated logic in case ' '
+        number a;
         std::string::const_iterator y;
-        for (auto x = expr.cbegin(); x!=expr.cend(); ++x){
-            switch(*x){
-            case ' ':
-                if (tmp.empty()) break; // ignore multiple spaces, ignore leading space
-                stack.push_back(tmp);
-                tmp.clear();
-                break;
-            case '+':
-                if (stack.size() < 2) throw(invalid_expression_format("+ expects 2 operands"));
-                b = std::move(stack.back());
-                stack.pop_back();
-                a = std::move(stack.back());
-                stack.pop_back();
-                a += b;
-                stack.push_back(std::move(a));
-                break;
-            case '-':
-                // negative number sign check
-                y=x;
-                ++y;
-                if (y!=expr.cend() && *y!=' '){
-                    tmp.push_back(*x);
-                    break;
-                }
-                if (stack.size() < 2) throw(invalid_expression_format("- expects 2 operands"));
-                b = std::move(stack.back());
-                stack.pop_back();
-                a = std::move(stack.back());
-                stack.pop_back();
-                a -= b;
-                stack.push_back(std::move(a));
-                break;
-            case '*':
-                if (stack.size() < 2) throw(invalid_expression_format("* expects 2 operands"));
-                b = std::move(stack.back());
-                stack.pop_back();
-                a = std::move(stack.back());
-                stack.pop_back();
-                a *= b;
-                stack.push_back(std::move(a));
-                break;
-            case '/':
-                if (stack.size() < 2) throw(invalid_expression_format("/ expects 2 operands"));
-                b = std::move(stack.back());
-                stack.pop_back();
-                a = std::move(stack.back());
-                stack.pop_back();
-                a /= b;
-                stack.push_back(std::move(a));
-                break;
-            case '%':
-                if (stack.size() < 2) throw(invalid_expression_format("% expects 2 operands"));
-                b = std::move(stack.back());
-                stack.pop_back();
-                a = std::move(stack.back());
-                stack.pop_back();
-                a %= b;
-                stack.push_back(std::move(a));
-                break;
-            default:
-                tmp.push_back(*x);
+        while( tokenizer >> tmp ){
+            if( tmp.back() == '(') tmp.pop_back();
+            if(tmp == "+"){
+                a = std::move(stack.back()); stack.pop_back();
+                stack.back()+=a;
             }
-
+            else if(tmp == "-"){
+                a = std::move(stack.back()); stack.pop_back();
+                stack.back()-=a;
+            }
+            else if(tmp == "*"){
+                a = std::move(stack.back()); stack.pop_back();
+                stack.back()*=a;
+            }
+            else if(tmp == "/"){
+                a = std::move(stack.back()); stack.pop_back();
+                stack.back()/=a;
+            }
+            else if(tmp == "%"){
+                a = std::move(stack.back()); stack.pop_back();
+                stack.back()%=a;
+            }
+            else if(tmp == "@pow"){
+                a = std::move(stack.back()); stack.pop_back();
+                stack.back().pow(a);
+            }
+            else if(tmp == "@floor"){
+                stack.back().floor();
+            }
+            else if(tmp == "@ceil"){
+                stack.back().ceil();
+            }
+            else if(tmp.front() == '@'){
+                throw(invalid_expression_format(("unsupported function token found: "s).append(tmp)));
+            }
+            else{ // is a number
+                stack.push_back(number(tmp));
+            }
         }
         if (stack.empty()) throw(invalid_expression_format("No result after evaluation, did you enter an empty string?"));
         a = std::move(stack.back());
@@ -794,55 +797,112 @@ struct number{
      * @return
      */
     static number eval_infix(const std::string & expr){
-        // xzauko number<16>::eval_infix("10::23 + 2::100010")
         using std::string; using namespace std::literals;
-        std::vector<string> operatorStack; // if functions are to be supported, this has to store strings
-        unsigned int prec, oprec;
-        const string precedences[]{"+-"s,"*/%"s,"^"s,"([{"s}, associativity[2]{"+-*/%"s,"^"s};
-        string postfix{};
-        string::const_iterator y;
-        for (auto x = expr.begin(); x!=expr.end();++x){
-            switch(*x){
-            case '+': case '-':
-            case '*': case '/':
-            case '^': case '%':
-                // negative number sign check
-                if (*x=='-'){
-                    y = x;
+        // xzauko number<16>::eval_infix("10::23 + 2::100010")
+        auto getLongToken = [
+                end = expr.cend(),
+                separators = string("([{+-*/%)]}, ")]
+                (string::const_iterator & x){
+            string token;
+            string::const_iterator y=x;
+            if (*y=='-') token.push_back(*(y++));
+            while(y!=end && separators.find(*y)==string::npos){
+                token.push_back(*y);
+                ++y;
+                if( y!=end && *y=='-' && token.back()==':' ){ // is - sign
+                    token.push_back(*y);
                     ++y;
-                    if ( y==expr.end()) throw(invalid_expression_format("expression ends with a -"));
-                    else if(values[static_cast<int>(*y)] >= 0) postfix.push_back(*x);
                 }
-                prec = 0;
-                for(; precedences[prec].find(*x)==string::npos; ++prec);
-                while(!operatorStack.empty()){
-                    oprec = 0;
-                    for(; precedences[oprec].find(operatorStack.back())==string::npos; ++oprec);
-                    if (oprec > prec || (associativity[0].find(*x)!=string::npos && oprec==prec)){
-                            postfix.push_back(' ');
-                            postfix.append(operatorStack.back());
-                            operatorStack.pop_back();
+            }
+            x = y;
+            return token;
+        };
+        auto isOperator = [operators = string("+-*/%")](const string & x){
+            return operators.find(x)!=string::npos;
+        };
+        auto lesserEqualPrecedence = [](char o1, const string & o2) -> bool{
+            switch(o2.front()){
+            case '+': case '-':
+                return (o1=='+' || o1=='-');
+            case '*': case '/': case '%':
+                return true;
+            }
+            return false;
+        };
+        std::vector<string> operationStack, postfixBuild;
+        string postfix, paren{'(','[','{'};
+        auto x = expr.cbegin();
+        while(x!=expr.cend() && *x==' ') ++x; //skip spaces at front of string
+        string now;
+        while (x!=expr.cend()){
+            now = getLongToken(x);
+            while(x!=expr.cend() && *x==' ') ++x; //skip spaces after expression
+            if(!now.empty()) {
+                if (now.front() == '@'){ // function
+                    if ( x==expr.cend() || paren.find(*x)==string::npos ){
+                        throw(invalid_expression_format("function call is missing parenthesis"));
                     }
-                    else break;
+                    operationStack.push_back(now);
                 }
-                operatorStack.push_back(string{*x});
+                else{
+                    postfixBuild.push_back(now);
+                }
+            }
+            if(x==expr.cend()) break;
+            switch(*x){
+            case '+': case '-': case '*':
+            case '/': case '%':
+                while((!operationStack.empty()) && isOperator(operationStack.back())){
+                    if(lesserEqualPrecedence(*x, operationStack.back())){
+                        postfixBuild.push_back(std::move(operationStack.back()));
+                        operationStack.pop_back();
+                    }
+                    else{
+                        break;
+                    }
+                }
+                operationStack.push_back(string{*x});
+                break;
+            case ',':
+                while((!operationStack.empty()) && operationStack.back()!="("){
+                    postfixBuild.push_back(std::move(operationStack.back()));
+                    operationStack.pop_back();
+                }
+                if(operationStack.empty()) throw(invalid_expression_format("misplaced function argument separator"));
                 break;
             case '(': case '[': case '{':
-                operatorStack.push_back("("s);
+                operationStack.push_back("(");
                 break;
             case ')': case ']': case '}':
-                while(operatorStack.back()!="("s){
-                    postfix.push_back(' ');
-                    postfix.append(operatorStack.back());
-                    operatorStack.pop_back();
+                while(!operationStack.empty() && operationStack.back()!="("){
+                    postfixBuild.push_back(std::move(operationStack.back()));
+                    operationStack.pop_back();
                 }
-                operatorStack.pop_back();
+                if (operationStack.empty()) throw(invalid_expression_format("mismatched right parethesis found"));
+                operationStack.pop_back();
+                if ((!operationStack.empty()) && operationStack.back().front()=='@'){
+                    postfixBuild.push_back(std::move(operationStack.back()));
+                    operationStack.pop_back();
+                }
                 break;
             default:
-                postfix.push_back(*x);
+                throw(invalid_expression_format("unknown operator found in infix expression"));
             }
+            ++x;
+            while(x!=expr.cend() && *x==' ') ++x; //skip spaces in front of expression
         }
-        return eval_postfix(postfix);
+        while(! operationStack.empty() ){
+            if (operationStack.back() == "(") throw(invalid_expression_format("mismatched left parethesis found"));
+            postfixBuild.push_back(std::move(operationStack.back()));
+            operationStack.pop_back();
+        }
+        for(auto it = postfixBuild.begin(); it!=postfixBuild.end(); ++it){
+            postfix.append(*it);
+            postfix.push_back(' ');
+        }
+        postfix.pop_back(); // remove last ' '
+        number<radix> retVal(eval_postfix(postfix));
+        return retVal;
     }
 
     template<unsigned char oradix>
@@ -1167,7 +1227,7 @@ number<radix> operator +(const number<radix> & lhs,
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator +(const number<radix> & lhs, T rhs){
     number<radix> newnum(lhs);
     newnum+=number<radix>(rhs);
@@ -1175,7 +1235,7 @@ number<radix> operator +(const number<radix> & lhs, T rhs){
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator +(T lhs, const number<radix> & rhs){
     number<radix> newnum(lhs);
     newnum+=rhs;
@@ -1191,7 +1251,7 @@ number<radix> operator -(const number<radix> & lhs,
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator -(const number<radix> & lhs, T rhs){
     number<radix> newnum(lhs);
     newnum-=number<radix>(rhs);
@@ -1199,7 +1259,7 @@ number<radix> operator -(const number<radix> & lhs, T rhs){
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator -(T lhs, const number<radix> & rhs){
     number<radix> newnum(lhs);
     newnum-=rhs;
@@ -1215,7 +1275,7 @@ number<radix> operator *(const number<radix> & lhs,
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator *(const number<radix> & lhs, T rhs){
     number<radix> newnum(lhs);
     newnum*=number<radix>(rhs);
@@ -1223,7 +1283,7 @@ number<radix> operator *(const number<radix> & lhs, T rhs){
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator *(T lhs, const number<radix> & rhs){
     number<radix> newnum(lhs);
     newnum*=rhs;
@@ -1239,7 +1299,7 @@ number<radix> operator /(const number<radix> & lhs,
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator /(const number<radix> & lhs, T rhs){
     number<radix> newnum(lhs);
     newnum/=number<radix>(rhs);
@@ -1247,7 +1307,7 @@ number<radix> operator /(const number<radix> & lhs, T rhs){
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator /(T lhs, const number<radix> & rhs){
     number<radix> newnum(lhs);
     newnum/=rhs;
@@ -1263,7 +1323,7 @@ number<radix> operator %(const number<radix> & lhs,
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator %(const number<radix> & lhs, T rhs){
     number<radix> newnum(lhs);
     newnum%=number<radix>(rhs);
@@ -1271,7 +1331,7 @@ number<radix> operator %(const number<radix> & lhs, T rhs){
 }
 template<unsigned char radix,
          typename T,
-         typename = decltype(static_cast<std::true_type>(std::is_arithmetic<T>()))>
+         typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
 number<radix> operator %(T lhs, const number<radix> & rhs){
     number<radix> newnum(lhs);
     newnum%=rhs;
@@ -1324,7 +1384,22 @@ template<unsigned char radix>
 fixedpoint::number<radix> pow(const fixedpoint::number<radix> & base,
                               const fixedpoint::number<radix> & exponent){
     fixedpoint::number<radix> result(base);
-    return result.pow(exponent);
+    result.pow(exponent);
+    return result;
+}
+
+template<unsigned char radix>
+fixedpoint::number<radix> floor(const fixedpoint::number<radix> & num){
+    fixedpoint::number<radix> result(num);
+    result.floor();
+    return result;
+}
+
+template<unsigned char radix>
+fixedpoint::number<radix> ceil(const fixedpoint::number<radix> & num){
+    fixedpoint::number<radix> result(num);
+    result.ceil();
+    return result;
 }
 
 } // namespace std

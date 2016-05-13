@@ -95,6 +95,7 @@ TEST_CASE("Greater than or equal"){
 TEST_CASE("Equal"){
     hexadecimal negeighth("2::-0.001",3), poseighth("2::0.001",2);
     hexadecimal possixteenth("10::0.0625",3), negsixteenth("10::-0.0625",2);
+    hexadecimal possixteenth1("10::0.0625",5);
     REQUIRE_FALSE( negeighth == poseighth );
     REQUIRE_FALSE( negeighth == possixteenth );
     REQUIRE_FALSE( negeighth == negsixteenth );
@@ -111,11 +112,13 @@ TEST_CASE("Equal"){
     REQUIRE_FALSE( poseighth == possixteenth );
     REQUIRE_FALSE( poseighth == negsixteenth );
     REQUIRE_FALSE( poseighth == negeighth );
+    REQUIRE( possixteenth == possixteenth1 );
 }
 
 TEST_CASE("Not equal"){
     hexadecimal negeighth("2::-0.001",3), poseighth("2::0.001",2);
     hexadecimal possixteenth("10::0.0625",3), negsixteenth("10::-0.0625",2);
+    hexadecimal possixteenth1("10::0.0625",5);
     REQUIRE( negeighth != poseighth );
     REQUIRE( negeighth != possixteenth );
     REQUIRE( negeighth != negsixteenth );
@@ -132,4 +135,5 @@ TEST_CASE("Not equal"){
     REQUIRE( poseighth != possixteenth );
     REQUIRE( poseighth != negsixteenth );
     REQUIRE( poseighth != negeighth );
+    REQUIRE_FALSE( possixteenth != possixteenth1 );
 }

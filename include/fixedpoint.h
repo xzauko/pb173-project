@@ -1072,9 +1072,9 @@ private:
      * @return result of division if div is true and result of modulo otherwise
      */
     number& div_or_mod(const number other,bool div){
-        if(other == 0){
-            throw division_by_zero();
-        }
+//        if(other == 0){
+//            throw division_by_zero();
+//        }
         std::string result;
         number divisor;
         number dividend;
@@ -1089,7 +1089,17 @@ private:
         divisor.cela_cast.append(other.des_cast.rbegin(),other.des_cast.rend());
         //za ni celou část
         divisor.cela_cast.append(other.cela_cast);
-
+        std::size_t pos;
+        size_t shift =divisor.cela_cast.size();
+        if((pos=divisor.cela_cast.find_last_not_of(digits[0]))!=std::string::npos){
+            //zahodím úvodní nuly
+            divisor.cela_cast.resize(pos+1);
+            //tím jsem efektivně posunul dělitele několik řádů vlevo,
+            //což budu muset zohlednit v počtu kroků dělení
+            shift -= pos+1;
+        }else{
+            throw division_by_zero();
+        }
         dividend.cela_cast.clear();
         if(divisor.cela_cast.size() > cela_cast.size()){//pokud počet míst celé části dělence nestačí
             //potrebuji des_length míst z des. části
@@ -1124,16 +1134,13 @@ private:
             }
         };
         //počet kroků dělení
-        //int steps = (cela_cast.size() + des_cast.size()) - divisor.cela_cast.size();
-        int steps = cela_cast.size()-other.cela_cast.size();
+        int steps = cela_cast.size()-other.cela_cast.size() + shift;
 
         if (steps < 0){//dělitel je řádově větší, takže celé tohle číso je zbytek
             if(div) *this = 0;
             return *this;
         }
 
-        //pozice právě počítané číslice výsledku výsledku
-        size_t pos = 0;
         for(int i = 0; i <= steps;i++){
             size_t tmp=0;
             while(dividend.cmp_ignore_sig(divisor) >= 0){
@@ -1142,7 +1149,6 @@ private:
             }
             result.push_back(digits[tmp]);
             dividend.cela_cast = get(divisor.cela_cast.size() + i) + dividend.cela_cast;
-            pos++;
         }
         if(div){
             cela_cast.assign(result.rbegin(),result.rend());
@@ -1154,6 +1160,8 @@ private:
             //odčítání mohlo zahodit implicitní nuly které možná budu potřebovat
             if( divisor.cela_cast.size() > dividend.cela_cast.size()) dividend.cela_cast.resize(divisor.cela_cast.size(),digits[0]);
 
+            //odstraním vliv posunutí
+            if(shift) dividend.cela_cast.append(shift,digits[0]);
             if(dividend.cela_cast.size() > other.des_cast.size()){
                 cela_cast.assign(dividend.cela_cast.substr(other.des_cast.size()+1));
                 std::string tmp = dividend.cela_cast.substr(0,other.des_cast.size()+1);

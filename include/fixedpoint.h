@@ -1,3 +1,9 @@
+/**
+ * @file   fixedpoint.h
+ * @author Michal Pochobradský
+ * @author Tibor Zauko
+ * @brief A one line description of the file.
+ */
 #ifndef FIXEDPOINT_H
 #define FIXEDPOINT_H
 #include <iostream> // cerr, clog
@@ -77,6 +83,7 @@ static const char digits[64] = {
 
 /**
  * @brief The invalid_number_format struct is an exception related to number struct
+ *
  * If this exception is thrown, it means that a string supposed to encode
  * a number is formatted incorrectly. The reason is further specified in
  * the what(method).
@@ -88,6 +95,7 @@ struct invalid_number_format: public std::runtime_error{
 
 /**
  * @brief The invalid_expression_format struct is an exception related to number struct
+ *
  * If this exception is thrown, it means that a string supposed to encode
  * a postfix or infix expression is formatted incorrectly.
  * The reason is further specified in the what(method).
@@ -99,6 +107,7 @@ struct invalid_expression_format: public std::runtime_error{
 
 /**
  * @brief The radix_too_high struct is an exception related to number struct
+ *
  * If this exception is thrown, it means that a string supposed to encode
  * a number specifies a radix that is out of the supported range of radixes.
  */
@@ -108,6 +117,7 @@ struct radix_invalid: public std::runtime_error{
 
 /**
  * @brief The radix_too_high struct is an exception related to number struct
+ *
  * If this exception is thrown, it means that there was an attempt to divide
  * number by zero.
  */
@@ -117,6 +127,7 @@ struct division_by_zero: public std::runtime_error{
 
 /**
  * @brief The unsupported_operation struct is an exception related to number struct
+ *
  * If this exception is thrown, it means that the requested operation is not suported.
  * The reason is further specified in the what(method).
  */
@@ -162,6 +173,11 @@ template<unsigned char radix>
  */
 struct number{
 
+    /**
+     * @brief Default constructor
+     *
+     * Constructs a number of zero value and zero scale.
+     */
     number():
         cela_cast{digits[0]},
         des_cast{},
@@ -172,8 +188,23 @@ struct number{
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
     }
     /**
-     * @brief number
-     * @param src
+     * @brief String constructor
+     *
+     * Key for source string format:
+     * <ul>
+     *  <li>s       First position for - sign (optional)</li>
+     *  <li>RR      Decimal digits of radix (optional)</li>
+     *  <li>::      Radix separator (optional, always must be coupled with radix)</li>
+     *  <li>S       Second position for - sign (optional)</li>
+     *  <li>D...D   Digits of the whole part</li>
+     *  <li>p       Radix point - '.' or ',' character (optional, always couple with fractional part)</li>
+     *  <li>d...d   Digits of the fractional part (optional, always precede by )</li>
+     * </li>
+     *
+     * @param src   source string according to format sRR::SD...Dpd...d
+     * @param scale to what scale to store the number
+     * @throw invalid_number_format upon misformatted number, further details in what() and cerr
+     * @throw radix_invalid when radix is specified incorrectly or is not supported
      */
     explicit number(const std::string & src, unsigned int scale = 0):
         isPositive(src.find_first_of('-')==src.npos),
@@ -273,8 +304,8 @@ struct number{
     }
 
     /**
-     * @brief number
-     * @param x
+     * @brief Integral type constructor
+     * @param x value to construct number with
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
     number(T x):
@@ -305,9 +336,16 @@ struct number{
     }
 
     /**
-     * @brief number
-     * @param x
-     * @param scale
+     * @brief Floating point type constructor
+     *
+     * Please note: Due to the limited resolution of the mantissa
+     * of floating point types, too large or too small numbers may end up
+     * converted with different values than expected. If this happens, you
+     * probably hit the limit of the mantissa's resolution.
+     * For correct conversion you might wish to consider using
+     * the string constructor instead.
+     * @param x value to construct number with
+     * @param scale how many fractional places to calculate (in target radix)
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
     explicit number(T x, unsigned int scale = 5):
@@ -362,12 +400,6 @@ struct number{
     number(number &&) = default;
     number& operator =(const number &) = default;
     number& operator =(number &&) = default;
-
-    /*
-     * ostatne konstruktory a operatory priradenia (copy, move),
-     * mozno konstruktory a operatory aj pre ciselne typy
-     * POZN.: pre konstruktor double asi vyhodne pouzit stringstream
-     */
 
     // O(n) where n is number of digits in number
     number& operator +=(const number & other){
@@ -424,13 +456,6 @@ struct number{
         strip_zeroes_and_fix_scale();
         return *this;
     }
-
-    /*number& operator+=(const std::string & other){ // ??
-        number onum(other);
-        *this += onum;
-        return *this;
-    }*/
-
 
     number & operator -=(const number &other){
         if ( isPositive != other.isPositive ){
@@ -609,6 +634,12 @@ struct number{
         return *this;
     }
 
+    /**
+     * @brief Divides number
+     * @param other divisor
+     * @return Reference to *this
+     * @throw division_by_zero if divisor is zero
+     */
     number & operator /=(const number &other){
         // handle signs here:
         isPositive = (isPositive == other.isPositive);
@@ -617,6 +648,12 @@ struct number{
         return div_or_mod(other,true);
     }
 
+    /**
+     * @brief Computes modulo of number
+     * @param other divisor
+     * @return Reference to *this
+     * @throw division_by_zero if divisor is zero
+     */
     number & operator %=(const number &other){
         // modulo has the sign of first operand
         return div_or_mod(other,false);
@@ -656,6 +693,12 @@ struct number{
         return tmpResult;
     }
 
+    /**
+     * @brief Calculates exponent-th power of number
+     * @param exponent  which power to calculate
+     * @return Reference to *this
+     * @throw unsupported_operation when attemted to power with fractional number
+     */
     number& pow(const number & exponent){
         // kontrola desatinnej casti:
         if(! std::all_of(exponent.des_cast.cbegin(),
@@ -697,6 +740,10 @@ struct number{
         return *this;
     }
 
+    /**
+     * @brief Floors the number
+     * @return Reference to *this
+     */
     number& floor(){
         if( !std::all_of( des_cast.cbegin(),
                           des_cast.cend(),
@@ -710,6 +757,10 @@ struct number{
         return *this;
     }
 
+    /**
+     * @brief Ceils the number
+     * @return Reference to *this
+     */
     number& ceil(){
         if( !std::all_of( des_cast.cbegin(),
                           des_cast.cend(),
@@ -723,6 +774,10 @@ struct number{
         return *this;
     }
 
+    /**
+     * @brief Truncates the number
+     * @return Reference to *this
+     */
     number& trunc(){
         des_cast.clear();
         scale = 0;
@@ -730,8 +785,8 @@ struct number{
     }
 
     /**
-     * @brief str   returns string representation of the object
-     * @return  a newly constructed string
+     * @brief Returns string representation of the object
+     * @return  A newly constructed string
      */
     std::string str() const{
         std::stringstream acc("");
@@ -750,8 +805,19 @@ struct number{
     }
 
     /**
-     * @brief eval_postfix
-     * @return
+     * @brief Evaluates an expression in postfix (reverse polish) notation
+     *
+     * Expression format rules:
+     * <ul>
+     *  <li>Separate tokens (functions, numbers, operators) by space</li>
+     *  <li>Denote function names with a leading '@' char
+     * (in certain radices, the function name itself is a valid number)</li>
+     *  <li>Write numbers according to the format specified in string constructor's documentation</li>
+     * </ul>
+     * @return Number containing the result of the evaluated expression
+     * @throw invalid_expression_format with details of error provided by what() and printed to cerr
+     * @throw (whatever the string constructor might throw)
+     * @throw (whatever the functions or operations performed might throw)
      */
     static number eval_postfix(const std::string & expr){
         using namespace std::literals;
@@ -843,9 +909,25 @@ struct number{
         return a;
     }
 
+
     /**
-     * @brief eval_infix
-     * @return
+     * @brief Evaluates an expression in infix notation
+     *
+     * Expression format rules:
+     * <ul>
+     *  <li>Tokens can not contain spaces, however, you can separate
+     * tokens with as many (including none) spaces</li>
+     *  <li>Parentheses, square brackets and braces are allowed to indicate precedence
+     * and denote function parameter list</li>
+     *  <li>If a function has more than one parameter, separate with ',' (comma)</li>
+     *  <li>Denote function names with a leading '@' char
+     * (in certain radices, the function name itself is a valid number)</li>
+     *  <li>Write numbers according to the format specified in string constructor's documentation,
+     * but only use the '.' (dot) character as radix point</li>
+     * </ul>
+     * @return Number containing the result of the evaluated expression
+     * @throw invalid_expression_format with details of error provided by what() and printed to cerr
+     * @throw whatever eval_postfix might throw
      */
     static number eval_infix(const std::string & expr){
         using std::string; using namespace std::literals;
@@ -982,32 +1064,35 @@ struct number{
 
     template<unsigned char oradix>
     /**
-     * @brief convert
-     * @return
+     * @brief Converts numbers between radices
+     * @return Converted number
      */
     static number convert(const number<oradix> & other){
         number result(other.str());
         return result;
     }
 
+    /**
+     * @brief Swaps number with other
+     * @param other number to swap with
+     */
     void swap( number& other ){
         cela_cast.swap(other.cela_cast);
         des_cast.swap(other.des_cast);
-        //using std::swap;
-        //swap(isPositive, other.isPositive);
         std::swap(isPositive, other.isPositive);
+        std::swap(scale, other.scale);
     }
 
 private:
     std::string cela_cast; // BIG_ENDIAN element ordering
     std::string des_cast;  // LITTLE_ENDIAN element ordering
     bool isPositive;
-    std::size_t scale = 0; // 0 - default scaling, >0 always strip des_cast to scale
+    std::size_t scale = 0; // number of fractional digits to store
 
     /**
-     * @brief cmp_ignore_sig
-     * @param other
-     * @return
+     * @brief Compares two numbers whithout taking sign into account
+     * @param other number to compare with
+     * @return 0 if equal, n<0 if *this<other, n>0 if *this>other
      */
     int cmp_ignore_sig(const number &other) const{
         //přeskočení případných nul na začátku
@@ -1052,7 +1137,7 @@ private:
     }
 
     /**
-     * @brief rise this number to the power of positive integer exponent
+     * @brief Rise this number to the power of positive integer exponent
      * @param exponent nubmer representing positive integer value
      */
     void int_pow(number && exponent){
@@ -1066,10 +1151,10 @@ private:
     }
 
     /**
-     * @brief divides this by other and returns either the result of division or modulo based on the div parameter
+     * @brief Divides this by other and returns either the result of division or modulo based on the div parameter
      * @param other number to divide this by
      * @param div whether division, or modulo shall be returned
-     * @return result of division if div is true and result of modulo otherwise
+     * @return Result of division if div is true and result of modulo otherwise
      */
     number& div_or_mod(const number other,bool div){
 //        if(other == 0){
@@ -1180,12 +1265,15 @@ private:
     }
 
     /**
-     * @brief strip_zeroes_and_fix_scale Strip leading 0 and maintain scale
+     * @brief Strip leading 0 and maintain scale
+     *
      * If value of whole part is equal to 0, then strips all but the last
      * leading 0 digit, otherwise strips all leading zeroes.
+     *
      * If scale is set as nonzero, it strips or extends the "decimal" part
      * to lenght equal to scale (extends with digit of value 0, stripping
      * truncates), otherwise always truncates any trailing zeroes.
+     *
      * If only one digit stays, that is a singular 0 in cela_cast,
      * also sets isPositive to true, so we are consistent with sign of zero.
      */
@@ -1220,7 +1308,7 @@ private:
     }
 
     /**
-     * @brief convert_through_native Converts strings of whole and decimal parts
+     * @brief Converts strings of whole and decimal parts
      * <p>
      * Conversion of string a to string b is achieved by utilizing
      * the muladd_vector_uint_uint method for the whole part.
@@ -1270,7 +1358,8 @@ private:
     }
 
     /**
-     * @brief muladd_vector_uint_uint Multiplies vector by uint, then adds another uint
+     * @brief Multiplies vector by uint, then adds another uint
+     *
      * Multiplies a vectors elements by an unsigned integer and then adds
      * another unsigned integer. Elements stored in vector are kept at values
      * smaller than specified in max_element - which is equivalent to storing

@@ -660,7 +660,33 @@ struct number{
         isPositive = (isPositive == other.isPositive);
         // handle trivial case (divide by 1):
         if(other.cmp_ignore_sig(number(1))==0) return *this;
-        return div_or_mod(other,true);
+        // handle scale:
+        unsigned int origscale = scale;
+        std::string np;
+        if(scale != 0){
+            scale = 0;
+            np.reserve(des_cast.size() + cela_cast.size());
+            np.append(des_cast.rbegin(), des_cast.rend());
+            np.append(cela_cast.begin(), cela_cast.end());
+            cela_cast = std::move(np);
+            des_cast.clear();
+        }
+        div_or_mod(other,true);
+        // revert scale modifications
+        if(origscale != 0){
+            des_cast.reserve(origscale);
+            for(long long int i = origscale-1; i>=0;--i){
+                if (i>=cela_cast.size()) des_cast.push_back(digits[0]);
+                else des_cast.push_back(cela_cast[i]);
+            }
+            np.clear();
+            if(origscale >= cela_cast.size()) np.push_back(digits[0]);
+            else np.append(cela_cast, origscale, std::string::npos);
+            cela_cast = std::move(np);
+            scale = origscale;
+        }
+        strip_zeroes_and_fix_scale();
+        return *this;
     }
 
     /**
@@ -671,7 +697,41 @@ struct number{
      */
     number & operator %=(const number &other){
         // modulo has the sign of first operand
-        return div_or_mod(other,false);
+        // handle scale:
+        number copy(*this);
+        copy.scale += other.scale;
+        operator/=(other);
+        scale += other.scale;
+        operator*=(other);
+        copy-=*this;
+        //unsigned int origscale = scale;
+        //std::string np;
+        /*if(scale != 0){
+            scale = 0;
+            np.reserve(des_cast.size() + cela_cast.size());
+            np.append(des_cast.rbegin(), des_cast.rend());
+            np.append(cela_cast.begin(), cela_cast.end());
+            cela_cast = std::move(np);
+            des_cast.clear();
+        }
+        div_or_mod(other,true);
+        // revert scale modifications
+        if(origscale != 0){
+            des_cast.reserve(origscale+other.scale);
+            for(long long int i = other.scale+origscale-1; i>=0;--i){
+                if (i>=cela_cast.size()) des_cast.push_back(digits[0]);
+                else des_cast.push_back(cela_cast[i]);
+            }
+            np.clear();
+            if( (other.scale+origscale) >= cela_cast.size()) np.push_back(digits[0]);
+            else np.append(cela_cast, other.scale+origscale, std::string::npos);
+            cela_cast = std::move(np);
+            scale = origscale+other.scale;
+        }*/
+        operator=(std::move(copy));
+        strip_zeroes_and_fix_scale();
+        return *this;
+
     }
 
     number& operator ++(){

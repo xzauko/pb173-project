@@ -100,9 +100,9 @@ TEST_CASE("Division"){
 TEST_CASE("Modulo"){
     decimal a("12.145"),b("-54.2564");
     const decimal c("12");
-    const decimal result1("0.145"),result2("-0.004");
+    const decimal result1("0.001"),result2("-0.0010415");
     REQUIRE( a%c == result1 );
-    b /= a;
+    b %= a;
     REQUIRE( b == result2 );
 }
 

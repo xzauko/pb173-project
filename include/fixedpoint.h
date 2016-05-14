@@ -208,12 +208,12 @@ struct number{
      * Key for source string format:
      * <ul>
      *  <li>s       First position for - sign (optional)</li>
-     *  <li>RR      Decimal digits of radix (optional)</li>
+     *  <li>RR      Decimal digits of radix (optional, always couple with radix separator)</li>
      *  <li>::      Radix separator (optional, always must be coupled with radix)</li>
      *  <li>S       Second position for - sign (optional)</li>
      *  <li>D...D   Digits of the whole part</li>
      *  <li>p       Radix point - '.' or ',' character (optional, always couple with fractional part)</li>
-     *  <li>d...d   Digits of the fractional part (optional, always precede by )</li>
+     *  <li>d...d   Digits of the fractional part (optional, always precede by radix point)</li>
      * </li>
      *
      * @param src   source string according to format sRR::SD...Dpd...d

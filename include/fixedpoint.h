@@ -763,34 +763,73 @@ struct number{
         while( tokenizer >> tmp ){
             if( tmp.back() == '(') tmp.pop_back();
             if(tmp == "+"){
+                if(stack.size() < 2){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
                 a = std::move(stack.back()); stack.pop_back();
                 stack.back()+=a;
             }
             else if(tmp == "-"){
+                if(stack.size() < 2){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
                 a = std::move(stack.back()); stack.pop_back();
                 stack.back()-=a;
             }
             else if(tmp == "*"){
+                if(stack.size() < 2){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
                 a = std::move(stack.back()); stack.pop_back();
                 stack.back()*=a;
             }
             else if(tmp == "/"){
+                if(stack.size() < 2){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
                 a = std::move(stack.back()); stack.pop_back();
                 stack.back()/=a;
             }
             else if(tmp == "%"){
+                if(stack.size() < 2){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
                 a = std::move(stack.back()); stack.pop_back();
                 stack.back()%=a;
             }
             else if(tmp == "@pow"){
+                if(stack.size() < 2){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
                 a = std::move(stack.back()); stack.pop_back();
                 stack.back().pow(a);
             }
             else if(tmp == "@floor"){
+                if(stack.empty()){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
                 stack.back().floor();
             }
             else if(tmp == "@ceil"){
+                if(stack.empty()){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
                 stack.back().ceil();
+            }
+            else if(tmp == "@trunc"){
+                if(stack.empty()){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
+                stack.back().trunc();
             }
             else if(tmp.front() == '@'){
                 throw(invalid_expression_format(("unsupported function token found: "s).append(tmp)));
@@ -811,24 +850,53 @@ struct number{
     static number eval_infix(const std::string & expr){
         using std::string; using namespace std::literals;
         // xzauko number<16>::eval_infix("10::23 + 2::100010")
-        /*auto getLongToken = [
+        auto getToken = [
+                beg = expr.cbegin(),
                 end = expr.cend(),
-                separators = string("([{+-*%/)]}, ")]
-                (string::const_iterator & x){
+                separators = string("([{+*%/)]},")]
+                ( string & out,
+                  string::const_iterator & x)
+                -> bool
+        {
             string token;
-            string::const_iterator y=x;
-            if (*y=='-') token.push_back(*(y++));
-            while(y!=end && separators.find(*y)==string::npos){
-                token.push_back(*y);
-                ++y;
-                if( y!=end && *y=='-' && token.back()==':' ){ // is - sign
-                    token.push_back(*y);
-                    ++y;
+            string::const_iterator prev = x-1;
+            while(x!=end && *x == ' ') ++x;
+            prev = x-1;
+            if( x != end ){
+                if (separators.find(*x)!=string::npos){
+                    // single character token
+                    token.push_back(*(prev = x++));
+                }
+                else if( (*x)=='-' ){
+                    if( (prev<beg) ||
+                        *prev=='-' ||
+                        *prev==' ' ||
+                        separators.find(*prev)!=string::npos ){
+                        token.push_back(*(prev = x++));
+                        while( x!=end &&
+                               (*x != '-' || *prev==':') &&
+                               *x != ' ' &&
+                               separators.find(*x)==string::npos){
+                            token.push_back(*(prev = x++));
+                        }
+                    }
+                    else{
+                        token.push_back(*(prev = x++));
+                    }
+                }
+                else{ // function token or number token
+                    while( x!=end &&
+                           (*x != '-' || *prev==':') &&
+                           *x != ' ' &&
+                           separators.find(*x)==string::npos){
+                        token.push_back(*(prev = x++));
+                    }
                 }
             }
-            x = y;
-            return token;
-        };*/
+            else prev=x;
+            out = std::move(token);
+            return prev!=end;
+        };
         auto isOperator = [operators = string("+-*%/")](const string & x){
             return operators.find(x)!=string::npos;
         };
@@ -844,12 +912,11 @@ struct number{
         std::vector<string> operationStack, postfixBuild;
         string postfix, lparen{'(','[','{'}, rparen{')',']','}'};
         std::istringstream inp(expr);
-        //auto x = expr.cbegin();
         //while(x!=expr.cend() && *x==' ') ++x; //skip spaces at front of string
+        auto x = expr.cbegin();
         string now;
         //while (x!=expr.cend()){
-        while(inp >> now){
-            //now = getLongToken(x);
+        while( getToken(now,x) ){
             //while(x!=expr.cend() && *x==' ') ++x; //skip spaces after expression
             if(isOperator(now)){
                 while( (!operationStack.empty()) &&
@@ -908,6 +975,7 @@ struct number{
             postfix.push_back(' ');
         }
         postfix.pop_back(); // remove last ' '
+        std::clog << "Built postfix expression: \"" << postfix << '"' << std::endl;
         number<radix> retVal(eval_postfix(postfix));
         return retVal;
     }

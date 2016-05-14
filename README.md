@@ -12,3 +12,5 @@ Test for constructors assumes the following about integral types:
 `include` - the place of the single fixedpoint.h header file
 
 `tests` - contains tests for fixedpoint.h
+
+`docs` - contains Doxyfile for generating documentation (html and manpages formats)

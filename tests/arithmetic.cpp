@@ -1,6 +1,7 @@
 #include <fixedpoint.h>
 
 #include <string>
+#include <iostream>
 
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
@@ -9,47 +10,49 @@ using namespace fixedpoint;
 using namespace std::literals;
 
 TEST_CASE("Addition same signs"){
-    decimal a(50),b(45);
-    const decimal c(5);
-    const decimal result1(55),result2(105);
+    decimal a("50.15",2),b("45.256",3);
+    const decimal c("5.4847",4);
+    const decimal result1("55.6347"),result2("56.2254");
+    const decimal result3("106.3754"),result4("111.2694");
     a += c;
     REQUIRE( a == result1 );
-    REQUIRE( b+c+c == result1 );
+    REQUIRE( b+c+c == result2 );
     (b += c) += a;
-    REQUIRE( b == result2 );
+    REQUIRE( b == result3 );
     a+=a;
-    REQUIRE( a == b+c );
+    REQUIRE( a == result4 );
 
     hexadecimal x(-50),y(-45);
     const hexadecimal z(-5);
-    const hexadecimal result3(-55),result4(-105);
+    const hexadecimal result5(-55),result6(-105);
     x += z;
-    REQUIRE( x == result3 );
-    REQUIRE( y+z+z == result3 );
+    REQUIRE( x == result5 );
+    REQUIRE( y+z+z == result5 );
     (y += z) += x;
-    REQUIRE( y == result4 );
+    REQUIRE( y == result6 );
 }
 
 TEST_CASE("Subtraction same signs"){
-    decimal a(50),b(45);
-    const decimal c(5);
-    const decimal result1(-5),result2(35), zero(0);
+    decimal a("50.15",2),b("45.256",3);
+    const decimal c("5.4847",4);
+    const decimal result1("44.6653"),result2("-4.8940");
+    const decimal result3("34.2866"), zero(0);
     a -= c;
-    REQUIRE( a == b );
-    REQUIRE( b-c-a == result1 );
+    REQUIRE( a == result1 );
+    REQUIRE( b-c-a == result2 );
     (b -= c) -= c;
-    REQUIRE( b == result2 );
+    REQUIRE( b == result3 );
     a-=a;
     REQUIRE( a == zero );
 
     hexadecimal x(-50),y(-45);
     const hexadecimal z(-5);
-    const hexadecimal result3(5),result4(-35);
+    const hexadecimal result4(5),result5(-35);
     x -= z;
     REQUIRE( x == y );
-    REQUIRE( y-z-x == result3 );
+    REQUIRE( y-z-x == result4 );
     (y -= z) -= z;
-    REQUIRE( y == result4 );
+    REQUIRE( y == result5 );
 }
 
 TEST_CASE("Add/subtract differing signs"){
@@ -84,4 +87,69 @@ TEST_CASE("Multiplication"){
     REQUIRE( y*x == result3 );
     x*=z;
     REQUIRE( x == result4 );
+}
+
+TEST_CASE("Division"){
+    decimal a("12.145"),b("-54.2564");
+    const decimal c("12");
+    const decimal result1("1.012"),result2("-4.4673");
+    std::cout << (decimal("0.125")/decimal("0.005")) << '\n';
+    REQUIRE( a/c == result1 );
+    b /= a;
+    REQUIRE( b == result2 );
+}
+
+TEST_CASE("Modulo"){
+    decimal a("12.145"),b("-54.2564");
+    const decimal c("12");
+    const decimal result1("0.145"),result2("-0.004");
+    REQUIRE( a%c == result1 );
+    b /= a;
+    REQUIRE( b == result2 );
+}
+
+TEST_CASE("Power"){
+    decimal a("-1.5"),b(2),e(15);
+    const decimal c(3),d(15),o(1),t(2);
+    const decimal result1("-3.30"),result2("32768");
+    REQUIRE( std::pow(a,c) == result1 );
+    b.pow(d);
+    REQUIRE( b == result2 );
+}
+
+TEST_CASE("Floor"){
+    decimal a("12.145"),b("-54.2564");
+    decimal c("12.000"),d("-55.000");
+    const decimal acexp(12),bdexp(-55);
+    REQUIRE( std::floor(a) == acexp );
+    b.floor();
+    REQUIRE( b == bdexp );
+    c.floor();
+    REQUIRE( c == acexp);
+    REQUIRE( std::floor(d) == bdexp );
+}
+
+TEST_CASE("Ceil"){
+    decimal a("12.145"),b("-54.2564");
+    decimal c("13.000"),d("-54.000");
+    const decimal acexp(13),bdexp(-54);
+    REQUIRE( std::ceil(a) == acexp );
+    b.ceil();
+    REQUIRE( b == bdexp );
+    c.ceil();
+    REQUIRE( c == acexp);
+    REQUIRE( std::ceil(d) == bdexp );
+}
+
+TEST_CASE("Trunc"){
+    decimal a("12.145"),b("-54.2564");
+    decimal c("12.000"),d("-54.000");
+    const decimal acexp(12),bdexp(-54);
+    REQUIRE( std::trunc(a) == acexp );
+    b.trunc();
+    REQUIRE( b == bdexp );
+    c.trunc();
+    REQUIRE( c == acexp);
+    REQUIRE( std::trunc(d) == bdexp );
+
 }

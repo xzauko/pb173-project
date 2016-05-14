@@ -14,6 +14,8 @@ void implicitConv(){
     number<21> n;
     n = "14::124ad"s;
     n += "10::10"s;
+    n = 12.58;
+    n -= 54.26;
 }
 
 int main(){

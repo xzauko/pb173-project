@@ -74,7 +74,7 @@ TEST_CASE("Integral aliases"){
 }
 
 TEST_CASE("String constructor"){
-    number<30> n30("10::124.114"s);
+    number<30> n30("10::124,114"s);
     number<21> n21("-21::5gdf.dddg",2);
     number<16> n16("10::124.11489"s,7);
     number<12> n12("-12::5ab.841b");
@@ -94,14 +94,14 @@ TEST_CASE("Move and copy constructors"){
 
 TEST_CASE("Operator ="){
     hexadecimal n1,n2,n3;
-    n1 = 25;
+    n1 = 25; // impicit conversion to number, then copy
     n2 = -888888888888888888ll;
     n3 = 0xffffffffffffffffull;
     REQUIRE( n1.str() == "16::19"s );
     REQUIRE( n2.str() == "16::-c55f7bc23038e38"s );
     REQUIRE( n3.str() == "16::ffffffffffffffff"s );
-    n1 = hexadecimal("12::-11ab.1243",8);
-    n2 = n3;
+    n1 = hexadecimal("12::-11ab.1243",8); // move
+    n2 = n3; // copy
     REQUIRE( n1.str() == "16::-7d3.1984bda1"s );
     REQUIRE( n2       == n3 );
     REQUIRE( n2.str() == "16::ffffffffffffffff"s );

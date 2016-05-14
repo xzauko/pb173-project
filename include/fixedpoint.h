@@ -116,13 +116,13 @@ struct division_by_zero: public std::runtime_error{
 };
 
 /**
- * @brief The unsuported_operation struct is an exception related to number struct
+ * @brief The unsupported_operation struct is an exception related to number struct
  * If this exception is thrown, it means that the requested operation is not suported.
  * The reason is further specified in the what(method).
  */
-struct unsuported_operation: public std::runtime_error{
-    unsuported_operation(const char * what):std::runtime_error(what){}
-    unsuported_operation(const std::string & what):std::runtime_error(what){}
+struct unsupported_operation: public std::runtime_error{
+    unsupported_operation(const char * what):std::runtime_error(what){}
+    unsupported_operation(const std::string & what):std::runtime_error(what){}
 };
 
 
@@ -188,7 +188,10 @@ struct number{
                     src.cend(),
                     [](const char c){return values[static_cast<int>(c)]==-2;}
                     ) > 1){
-            throw(invalid_number_format(("contains more than one decimal separator"s).append(src)));
+            std::cerr << src
+                      << " contains too many decimal separators"
+                      << std::flush;
+            throw(invalid_number_format("contains more than one decimal separator"));
         }
         auto start = src.cbegin();
         std::size_t rdx = radix;
@@ -197,6 +200,9 @@ struct number{
             std::stringstream x("");
             while(*start != ':'){
                 if(*start<'0' || '9'<*start) {
+                    std::cerr << src
+                              << " contains invalid characters in radix"
+                              << std::flush;
                     throw(invalid_number_format("src's radix is ill formatted"));
                 }
                 x << *start;
@@ -208,6 +214,9 @@ struct number{
             }
             ++start; // goes to second colon
             if (*start != ':'){
+                std::cerr << src
+                          << " is missing a colon in radix separator"
+                          << std::flush;
                 throw(invalid_number_format("missing 2nd colon in separator"));
             }
             ++start;
@@ -225,6 +234,10 @@ struct number{
                             (values[static_cast<int>(c)]>=rdx));
                     }))
         {
+            std::cerr << src
+                      << " contains invalid characters for radix "
+                      << rdx
+                      << std::flush;
             throw(invalid_number_format("invalid characters found in input string"));
         }
         // get whole and decimal parts:
@@ -258,16 +271,6 @@ struct number{
         }
         strip_zeroes_and_fix_scale();
     }
-    /**
-     * @brief operator =
-     * @param src
-     * @return
-     */
-    /*number& operator =(const std::string & src){
-        number x(src);
-        swap(x);
-        return *this;
-    }*/
 
     /**
      * @brief number
@@ -659,7 +662,7 @@ struct number{
                          exponent.des_cast.cend(),
                          [](const char x){return x==digits[0];}
                          )){
-            throw unsuported_operation("Only integer exponent is suported for power function!");
+            throw unsupported_operation("Only integer exponent is suported for power function!");
         }
         // fast path for exponent 0
         if(exponent.cmp_ignore_sig(number()) == 0){
@@ -677,7 +680,7 @@ struct number{
             number others(1), help;
             number one(1),two(2);
             if(!expCopy.isPositive){
-                throw unsuported_operation("CAVEAT: Malfunctioning division prohibits negative exponent for power");
+                throw unsupported_operation("CAVEAT: Malfunctioning division prohibits negative exponent for power");
                 //(*this) /= number(1); // DOES NOTHING!
                 //expCopy.isPositive = true;
             }
@@ -698,12 +701,12 @@ struct number{
         if( !std::all_of( des_cast.cbegin(),
                           des_cast.cend(),
                           [](char x){return x==digits[0];}) ){
-            des_cast.clear();
-            scale = 0;
             if (! isPositive){
                 operator--();
             }
         }
+        des_cast.clear();
+        scale = 0;
         return *this;
     }
 
@@ -711,12 +714,18 @@ struct number{
         if( !std::all_of( des_cast.cbegin(),
                           des_cast.cend(),
                           [](char x){return x==digits[0];}) ){
-            des_cast.clear();
-            scale = 0;
             if (isPositive){
                 operator++();
             }
         }
+        des_cast.clear();
+        scale = 0;
+        return *this;
+    }
+
+    number& trunc(){
+        des_cast.clear();
+        scale = 0;
         return *this;
     }
 
@@ -802,9 +811,9 @@ struct number{
     static number eval_infix(const std::string & expr){
         using std::string; using namespace std::literals;
         // xzauko number<16>::eval_infix("10::23 + 2::100010")
-        auto getLongToken = [
+        /*auto getLongToken = [
                 end = expr.cend(),
-                separators = string("([{+-*/%)]}, ")]
+                separators = string("([{+-*%/)]}, ")]
                 (string::const_iterator & x){
             string token;
             string::const_iterator y=x;
@@ -819,80 +828,75 @@ struct number{
             }
             x = y;
             return token;
-        };
-        auto isOperator = [operators = string("+-*/%")](const string & x){
+        };*/
+        auto isOperator = [operators = string("+-*%/")](const string & x){
             return operators.find(x)!=string::npos;
         };
-        auto lesserEqualPrecedence = [](char o1, const string & o2) -> bool{
+        auto lesserEqualPrecedence = [](const string & o1, const string & o2) -> bool{
             switch(o2.front()){
             case '+': case '-':
-                return (o1=='+' || o1=='-');
+                return (o1=="+" || o1=="-");
             case '*': case '/': case '%':
                 return true;
             }
             return false;
         };
         std::vector<string> operationStack, postfixBuild;
-        string postfix, paren{'(','[','{'};
-        auto x = expr.cbegin();
-        while(x!=expr.cend() && *x==' ') ++x; //skip spaces at front of string
+        string postfix, lparen{'(','[','{'}, rparen{')',']','}'};
+        std::istringstream inp(expr);
+        //auto x = expr.cbegin();
+        //while(x!=expr.cend() && *x==' ') ++x; //skip spaces at front of string
         string now;
-        while (x!=expr.cend()){
-            now = getLongToken(x);
-            while(x!=expr.cend() && *x==' ') ++x; //skip spaces after expression
-            if(!now.empty()) {
-                if (now.front() == '@'){ // function
-                    if ( x==expr.cend() || paren.find(*x)==string::npos ){
-                        throw(invalid_expression_format("function call is missing parenthesis"));
-                    }
-                    operationStack.push_back(now);
-                }
-                else{
-                    postfixBuild.push_back(now);
-                }
-            }
-            if(x==expr.cend()) break;
-            switch(*x){
-            case '+': case '-': case '*':
-            case '/': case '%':
-                while((!operationStack.empty()) && isOperator(operationStack.back())){
-                    if(lesserEqualPrecedence(*x, operationStack.back())){
-                        postfixBuild.push_back(std::move(operationStack.back()));
-                        operationStack.pop_back();
-                    }
-                    else{
-                        break;
-                    }
-                }
-                operationStack.push_back(string{*x});
-                break;
-            case ',':
-                while((!operationStack.empty()) && operationStack.back()!="("){
+        //while (x!=expr.cend()){
+        while(inp >> now){
+            //now = getLongToken(x);
+            //while(x!=expr.cend() && *x==' ') ++x; //skip spaces after expression
+            if(isOperator(now)){
+                while( (!operationStack.empty()) &&
+                       isOperator(operationStack.back()) &&
+                       lesserEqualPrecedence(now, operationStack.back())){
                     postfixBuild.push_back(std::move(operationStack.back()));
                     operationStack.pop_back();
                 }
-                if(operationStack.empty()) throw(invalid_expression_format("misplaced function argument separator"));
-                break;
-            case '(': case '[': case '{':
+                operationStack.push_back(std::move(now));
+            }
+            else if(now.front() == '@'){
+                operationStack.push_back(std::move(now));
+            }
+            else if(lparen.find(now)!=string::npos){
                 operationStack.push_back("(");
-                break;
-            case ')': case ']': case '}':
-                while(!operationStack.empty() && operationStack.back()!="("){
-                    postfixBuild.push_back(std::move(operationStack.back()));
-                    operationStack.pop_back();
-                }
-                if (operationStack.empty()) throw(invalid_expression_format("mismatched right parethesis found"));
-                operationStack.pop_back();
-                if ((!operationStack.empty()) && operationStack.back().front()=='@'){
-                    postfixBuild.push_back(std::move(operationStack.back()));
-                    operationStack.pop_back();
-                }
-                break;
-            default:
-                throw(invalid_expression_format("unknown operator found in infix expression"));
             }
-            ++x;
-            while(x!=expr.cend() && *x==' ') ++x; //skip spaces in front of expression
+            else if(now == ","){
+                while( (!operationStack.empty()) &&
+                       operationStack.back()!="("){
+                    postfixBuild.push_back(std::move(operationStack.back()));
+                    operationStack.pop_back();
+                }
+                if (operationStack.empty()){
+                    std::cerr << "Misplaced function separator found in " << expr;
+                    throw(invalid_expression_format("misplaced function argument separator - ','"));
+                }
+            }
+            else if(rparen.find(now)!=string::npos){
+                while( (!operationStack.empty()) &&
+                       operationStack.back()!="("){
+                    postfixBuild.push_back(std::move(operationStack.back()));
+                    operationStack.pop_back();
+                }
+                if (operationStack.empty()){
+                    std::cerr << "Mismatched right parethesis " << expr;
+                    throw(invalid_expression_format("mismatched right parethesis found"));
+                }
+                operationStack.pop_back(); // remove the left parenthesis
+                if ( (!operationStack.empty()) &&
+                     operationStack.back().front() == '@'){ // function call
+                    postfixBuild.push_back(std::move(operationStack.back()));
+                    operationStack.pop_back();
+                }
+            }
+            else{ //it's a number or something in place of a number
+                postfixBuild.push_back(std::move(now));
+            }
         }
         while(! operationStack.empty() ){
             if (operationStack.back() == "(") throw(invalid_expression_format("mismatched left parethesis found"));
@@ -1431,6 +1435,13 @@ template<unsigned char radix>
 fixedpoint::number<radix> ceil(const fixedpoint::number<radix> & num){
     fixedpoint::number<radix> result(num);
     result.ceil();
+    return result;
+}
+
+template<unsigned char radix>
+fixedpoint::number<radix> trunc(const fixedpoint::number<radix> & num){
+    fixedpoint::number<radix> result(num);
+    result.trunc();
     return result;
 }
 

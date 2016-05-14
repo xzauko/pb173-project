@@ -1060,7 +1060,7 @@ private:
                 if(i >= des_cast.size() ) return digits[0];
                 return des_cast.at(i);
             }else{
-                i = cela_cast.size() - i;
+                i = cela_cast.size() - 1 - i;
                 return cela_cast.at(i);
 
             }
@@ -1080,7 +1080,8 @@ private:
                 dividend -= divisor;
             }
             result.push_back(digits[tmp]);
-            dividend.cela_cast = get(divisor.cela_cast.size() + i) + dividend.cela_cast;
+            char c = get(divisor.cela_cast.size() + i );
+            dividend.cela_cast = c + dividend.cela_cast;
         }
         if(div){
             cela_cast.assign(result.rbegin(),result.rend());

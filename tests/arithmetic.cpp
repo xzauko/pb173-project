@@ -92,7 +92,6 @@ TEST_CASE("Division"){
     decimal a("12.145"),b("-54.2564");
     const decimal c("12");
     const decimal result1("1.012"),result2("-4.4673");
-    std::cout << (decimal("0.125")/decimal("0.005")) << std::endl;
     REQUIRE( a/c == result1 );
     b /= a;
     REQUIRE( b == result2 );

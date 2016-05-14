@@ -1,6 +1,6 @@
 #ifndef FIXEDPOINT_H
 #define FIXEDPOINT_H
-#include <iostream> // cerr
+#include <iostream> // cerr, clog
 #include <string>
 #include <vector> // in convert_through_native
 #include <type_traits> // SFINAE

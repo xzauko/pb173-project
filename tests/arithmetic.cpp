@@ -82,19 +82,21 @@ TEST_CASE("Add/subtract differing signs"){
 }
 
 TEST_CASE("Multiplication"){
-    decimal a("251.354"s,3),b("-35.25"s,2);
+    decimal a("251.354"s,3),b("-35.25"s,2),d("1.5");
     const decimal c("5.4",1);
-    const decimal result1("-8860.228"s,3), result2("1357.311"s,3);
+    const decimal result1("-8860.228"s,3), result2("1357.311"s,3), result3("3.375");
     REQUIRE( b*a == result1 );
     a*=c;
     REQUIRE( a == result2 );
+    d *= decimal("1.500");
+    REQUIRE( (d*decimal("1.5")) == result3 );
 
     hexadecimal x("10::251.03125"s,3),y("10::-35.25"s,1);
     const hexadecimal z("10::5.4"s,1);
-    const hexadecimal result3("16::-2290.da"s,2), result4("16::545.4b"s,2);
-    REQUIRE( y*x == result3 );
+    const hexadecimal result4("16::-2290.da0"s,3), result5("16::545.4b"s,2);
+    REQUIRE( y*x == result4 );
     x*=z;
-    REQUIRE( x == result4 );
+    REQUIRE( x == result5 );
 }
 
 TEST_CASE("Division"){

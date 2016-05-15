@@ -566,48 +566,6 @@ struct number{
             return *this;
         }
         else{
-            // Knuth vol.2 p.253 long multiplication (we use reverse indexing):
-            // covert strings to to vectors (with the values)
-            /*std::vector<unsigned int> our, their;
-            unsigned int productfracnum = des_cast.size() + other.des_cast.size();
-            unsigned int resultfracnum = std::max(des_cast.size(), other.des_cast.size());
-            for (auto rit = des_cast.crbegin(); rit != des_cast.crend(); ++rit){
-                our.push_back(values[static_cast<int>(*rit)]);
-            }
-            for (auto x : cela_cast){
-                our.push_back(values[static_cast<int>(x)]);
-            }
-            for (auto rit = other.des_cast.crbegin(); rit != other.des_cast.crend(); ++rit){
-                their.push_back(values[static_cast<int>(*rit)]);
-            }
-            for (auto x : other.cela_cast){
-                their.push_back(values[static_cast<int>(x)]);
-            }
-            unsigned int i,j; // i - our index, j - their index
-            unsigned int carry=0; // doubles as t and k of algo
-            std::vector<unsigned int> product(their.size()+our.size(),0);
-            for(j = 0;j < their.size(); ++j){
-                for(i=0; i<our.size(); ++i){
-                    carry += our[i]*their[j]+product[i+j];
-                    product[i+j] = carry % radix;
-                    carry /= radix;
-                }
-                if (carry > 0){ // handle carry
-                    product[i+j] += carry;
-                    carry = 0;
-                }
-            }
-            // convert back to digits
-            des_cast.clear();
-            cela_cast.clear();
-            for (unsigned int i = productscale; i<product.size(); ++i){
-                cela_cast.push_back(digits[product[i]]);
-            }
-            product.resize(productfracnum); // leave the decimal part of product
-            unsigned int i = 0;
-            for (auto rit = product.crbegin(); i < resultfracnum; ++rit, ++i){
-                des_cast.push_back(digits[*rit]);
-            }*/
             //čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
             //pocet desetinych míst
             size_t decimals = std::max(des_cast.size(), other.des_cast.size());
@@ -765,20 +723,21 @@ struct number{
             number others(1), help;
             number one(1),two(2);
             if(!expCopy.isPositive){
-                //throw unsupported_operation("CAVEAT: Malfunctioning division prohibits negative exponent for power");
-                unsigned int scalebak = scale;
-                scale = cela_cast.size(); // 1/(*this) needs to have good precision
-                (*this) = one/(*this);
-                scale = scalebak;
+                // convert the problem to positive power of inverse number
                 expCopy.isPositive = true;
+                (*this) = one/(*this);
             }
             // divide and conquer - halve the exponent in each pass
+            std::size_t scalebak = scale;
+            scale = 0; // we need wholepart division for next part
             while(expCopy > one){
+
                 if(expCopy%two == one) others *= (*this);
                 help = (*this);
                 operator*=(help);
                 expCopy/=two;
             }
+            scale = scalebak; // revert to original scale
             operator*=(others);
         }
         strip_zeroes();

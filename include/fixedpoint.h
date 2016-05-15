@@ -837,8 +837,9 @@ struct number{
         acc << static_cast<unsigned int>(radix) << "::";
         if( ! isPositive ) acc << "-";
         acc << reversewhole;
-        if( ! des_cast.empty() ){
-            acc << "." << des_cast;
+        std::size_t lastNonZero=des_cast.find_last_not_of(digits[0]);
+        if( lastNonZero!=des_cast.npos ){
+            acc << "." << des_cast.substr(0,lastNonZero+1);
         }
         std::string result(acc.str());
         return result;
@@ -1283,16 +1284,11 @@ private:
             isZero = true;
         }
         // leading zeroes stripped
-        if ((pos=des_cast.find_last_not_of(digits[0])) == des_cast.npos){
-            des_cast.clear();
-            // isZero stays as is true && isZero always evals as true
-        }
-        else {
-            des_cast.resize(pos+1,digits[0]);
+        if (des_cast.find_last_not_of(digits[0]) != des_cast.npos){
             isZero = false; // false && isZero always evals as false
         }
+        // else isZero stays unchanged
         if (isZero) isPositive = true; // 0 is treated as positive
-        // trailing zeroes truncated
     }
 
     /**

@@ -85,7 +85,7 @@ TEST_CASE("Multiplication"){
 
     hexadecimal x("10::251.03125"s,3),y("10::-35.25"s,1);
     const hexadecimal z("10::5.4"s,1);
-    const hexadecimal result3("16::-2290.da"s,2), result4("16::545.4b"s,2);
+    const hexadecimal result3("16::-2290.da0"s,3), result4("16::545.4b"s,2);
     REQUIRE( y*x == result3 );
     x*=z;
     REQUIRE( x == result4 );

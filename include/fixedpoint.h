@@ -191,6 +191,10 @@ template<unsigned char radix>
  * <ol>
  * <li>implementation caveat - maximum supported system is base-36 (or base-64),
  * due to lack of suitable ASCII chaacters to express numerals</li>
+ * <li><b>Known bug</b>: performing @code myVar1 *= myVar1; @endcode
+ * results in an exception, use @code myVar1 = myVar1 * myVar1; @endcode
+ * or @code myVar1.pow(2); //implicitly converts 2 to same type as myVar1 @endcode
+ * instead.</li>
  * </ol>
  */
 struct number{

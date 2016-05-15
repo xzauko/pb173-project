@@ -8,6 +8,9 @@
 using namespace fixedpoint;
 using namespace std::literals;
 
+template<unsigned char radix>
+std::size_t number<radix>::scale = 0;
+
 TEST_CASE("Addition same signs"){
     decimal a("50.15",2),b("45.256",3);
     const decimal c("5.4847",4);
@@ -92,7 +95,9 @@ TEST_CASE("Division"){
     decimal a("12.145"),b("-54.2564");
     const decimal c("12");
     const decimal result1("1.012"),result2("-4.4673");
+    decimal::scale = 3;
     REQUIRE( a/c == result1 );
+    decimal::scale = 4;
     b /= a;
     REQUIRE( b == result2 );
 }
@@ -101,7 +106,9 @@ TEST_CASE("Modulo"){
     decimal a("12.145"),b("-54.2564");
     const decimal c("12");
     const decimal result1("0.001"),result2("-0.0010415");
+    decimal::scale = 3;
     REQUIRE( a%c == result1 );
+    decimal::scale = 4;
     b %= a;
     REQUIRE( b == result2 );
 }

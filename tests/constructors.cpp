@@ -8,6 +8,9 @@
 using namespace fixedpoint;
 using namespace std::literals;
 
+template<unsigned char radix>
+std::size_t number<radix>::scale = 0;
+
 TEST_CASE("Default constructor"){
     decimal n1, test0(0);
     REQUIRE( n1 == test0 );

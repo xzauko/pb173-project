@@ -4,6 +4,9 @@
 
 using namespace fixedpoint;
 
+template<unsigned char radix>
+std::size_t number<radix>::scale = 0;
+
 void radixHigh(){
     number<45> n;
     number<1> n1;

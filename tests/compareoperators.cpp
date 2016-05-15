@@ -8,6 +8,9 @@
 using namespace fixedpoint;
 using namespace std::literals;
 
+template<unsigned char radix>
+std::size_t number<radix>::scale = 0;
+
 TEST_CASE("Less than"){
     hexadecimal negeighth("2::-0.001",3), poseighth("2::0.001",2);
     hexadecimal possixteenth("10::0.0625",3), negsixteenth("10::-0.0625",2);

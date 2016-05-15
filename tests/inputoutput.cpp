@@ -6,6 +6,9 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
+template<unsigned char radix>
+std::size_t fixedpoint::number<radix>::scale = 0;
+
 TEST_CASE("Output formatting"){
     using std::string; using std::stringstream;
     const string res1("10::-34.134"),res2("2::-111.0101");

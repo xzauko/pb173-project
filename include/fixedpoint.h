@@ -156,6 +156,13 @@ template<unsigned char radix>
 /**
  * <b>The number struct represents the fixedpoint numbers</b>
  * <p>
+ * Before using any functions provided by this library,
+ * you must initialize its static member scale, you may use this code snippet:
+ * @code
+ * template<unsigned char radix>
+ * std::size_t number<radix>::scale = 0;
+ * @endcode
+ * <p>
  * You can parametrise the numeral system used by template parameter.
  * The default numeral system is base-10, to set base-n numeral system
  * instantiate the template with n*.
@@ -189,6 +196,14 @@ template<unsigned char radix>
 struct number{
 
     /**
+     * @brief To what number of fractional places to perform division.
+     *
+     * Affects modulo as well - mudulo is performed to
+     * scale+number of fractional digits of the divisor precision.
+     */
+    static std::size_t scale;
+
+    /**
      * @brief Default constructor
      *
      * Constructs a number of zero value and zero scale.
@@ -196,8 +211,7 @@ struct number{
     number():
         cela_cast{digits[0]},
         des_cast{},
-        isPositive(true),
-        scale(0)
+        isPositive(true)
     {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
@@ -216,14 +230,25 @@ struct number{
      *  <li>d...d   Digits of the fractional part (optional, always precede by radix point)</li>
      * </li>
      *
+     * If you don't specify fracnum, by default the size of the detected
+     * fractional part is taken and multiplied by ceil of source_radix/target_radix
+     * and the result of that operation is considered as fracnum (aka IMPLICIT STRATEGY).
+     *
+     * If you specify fracnum as a nonnegative integer that number is not modified
+     * in any way and fractional part is calculated to that size.
+     *
+     * If you specify fracnum as a negative integer, the implicit strategy is performed.
+     *
+     * Regardless of what is the value of fracnum, the resulting number is always
+     * stripped of leading and trailing zeroes.
+     *
      * @param src   source string according to format sRR::SD...Dpd...d
-     * @param scale to what scale to store the number
+     * @param fracnum how many fractional digits to store after conversion
      * @throw invalid_number_format upon misformatted number, further details in what() and cerr
      * @throw radix_invalid when radix is specified incorrectly or is not supported
      */
-    explicit number(const std::string & src, unsigned int scale = 0):
-        isPositive(src.find_first_of('-')==src.npos),
-        scale(scale)
+    explicit number(const std::string & src, long long int fracnum = -1):
+        isPositive(src.find_first_of('-')==src.npos)
     {
         using namespace std::literals;
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
@@ -302,20 +327,20 @@ struct number{
         std::reverse(whole.begin(), whole.end());
         // convert here:
         if (rdx == radix){
-            // only need to assign to members
+            // only need to assign to members and maybe resize des_cast
             cela_cast = std::move(whole);
             des_cast = std::move(decimal);
-            if (scale == 0) this->scale = des_cast.size();
+            if (fracnum >= 0) des_cast.resize(fracnum, digits[0]);
         }
         else{
             // convert from base rdx to base radix:
             // convert radix to base rdx:
-            if (scale == 0) this->scale = decimal.size()*std::ceil(static_cast<double>(rdx)/radix);
-            auto res = convert_with_vector(whole, decimal, rdx, this->scale);
+            if (fracnum < 0) fracnum = std::ceil(static_cast<double>(rdx)/radix)*decimal.size();
+            auto res = convert_with_vector(whole, decimal, rdx, fracnum);
             cela_cast = std::move(res.first);
             des_cast = std::move(res.second);
         }
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
     }
 
     /**
@@ -325,8 +350,7 @@ struct number{
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
     number(T x):
         des_cast{},
-        isPositive(x>=0),
-        scale(0)
+        isPositive(x>=0)
     {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
@@ -347,7 +371,7 @@ struct number{
         else{
             cela_cast = convert_with_vector(rep,"",10,0).first;
         }
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
     }
 
     /**
@@ -363,16 +387,14 @@ struct number{
      * @param scale how many fractional places to calculate (in target radix)
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
-    explicit number(T x, unsigned int scale = 5):
-        isPositive(x>=0),
-        scale(scale)
+    explicit number(T x, unsigned int fracnum = 5):
+        isPositive(x>=0)
     {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
-        if (scale > 19){
+        if (fracnum > 19){
             std::cerr << "Max scale for floating point constructor is 19!" << std::flush;
-            scale = 19;
-            this->scale = 19;
+            fracnum = 19;
         }
         if (x < 0) x*=-1;
         std::string whole, decimal;
@@ -382,7 +404,7 @@ struct number{
         }
         std::reverse(whole.begin(), whole.end()); // reverse string - BIG ENDIAN storage
         x -= std::floor(x);
-        for (int i = std::min(scale, static_cast<unsigned>(std::ceil(10.0/radix))); i>=0; --i) x*=10;
+        for (int i = std::min(fracnum, static_cast<unsigned>(std::ceil(10.0/radix))); i>=0; --i) x*=10;
         decimal = std::to_string(std::floor(x));
         if (decimal.find_first_of('.') != std::string::npos) {
             decimal.resize(decimal.find_first_of('.'),'0');
@@ -404,11 +426,11 @@ struct number{
             des_cast = decimal;
         }
         else{
-            auto res = convert_with_vector(whole,decimal,10,this->scale);
+            auto res = convert_with_vector(whole,decimal,10,fracnum);
             cela_cast = std::move(res.first);
             des_cast = std::move(res.second);
         }
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
     }
 
     number(const number &) = default;
@@ -467,8 +489,7 @@ struct number{
         }
         // At worst 1 partial copy (extending the scale)
         // or whatever -= does
-        scale = std::max(scale, other.scale);
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
         return *this;
     }
 
@@ -524,8 +545,7 @@ struct number{
 
         }
         cela_cast.resize(first_digit + 1, digits[0] );
-        scale = std::max(scale, other.scale);
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
         // At worst 1 copy
         // or 1 copy and whatever += does
         return *this;
@@ -549,7 +569,8 @@ struct number{
             // Knuth vol.2 p.253 long multiplication (we use reverse indexing):
             // covert strings to to vectors (with the values)
             /*std::vector<unsigned int> our, their;
-            unsigned int productscale = des_cast.size() + other.des_cast.size();
+            unsigned int productfracnum = des_cast.size() + other.des_cast.size();
+            unsigned int resultfracnum = std::max(des_cast.size(), other.des_cast.size());
             for (auto rit = des_cast.crbegin(); rit != des_cast.crend(); ++rit){
                 our.push_back(values[static_cast<int>(*rit)]);
             }
@@ -582,8 +603,9 @@ struct number{
             for (unsigned int i = productscale; i<product.size(); ++i){
                 cela_cast.push_back(digits[product[i]]);
             }
-            product.resize(productscale); // leave the decimal part of product
-            for (auto rit = product.crbegin(); rit != product.crend(); ++rit){
+            product.resize(productfracnum); // leave the decimal part of product
+            unsigned int i = 0;
+            for (auto rit = product.crbegin(); i < resultfracnum; ++rit, ++i){
                 des_cast.push_back(digits[*rit]);
             }*/
             //čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
@@ -591,6 +613,8 @@ struct number{
             size_t decimals = std::max(des_cast.size(), other.des_cast.size());
             //ocekavana maximalni velikost výsledku
             size_t size = (decimals + cela_cast.size()) + (decimals + other.cela_cast.size());
+            // konecna velkost desatinnej casti:
+            size_t endfrac = std::max(des_cast.size(), other.des_cast.size());
 
             const number a(*this);
             const number& b = other;
@@ -643,9 +667,9 @@ struct number{
             if(pos != cela_cast.npos) pos += 1;
             else pos = 1;
             cela_cast.resize(pos, digits[0]);
+            des_cast.resize(endfrac, digits[0]);
         }
-        scale = std::max(scale, other.scale);
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
         return *this;
     }
 
@@ -658,34 +682,8 @@ struct number{
     number & operator /=(const number &other){
         // handle signs here:
         isPositive = (isPositive == other.isPositive);
-        // handle trivial case (divide by 1):
-        if(other.cmp_ignore_sig(number(1))==0) return *this;
-        // handle scale:
-        unsigned int origscale = scale;
-        std::string np;
-        if(scale != 0){
-            scale = 0;
-            np.reserve(des_cast.size() + cela_cast.size());
-            np.append(des_cast.rbegin(), des_cast.rend());
-            np.append(cela_cast.begin(), cela_cast.end());
-            cela_cast = std::move(np);
-            des_cast.clear();
-        }
         div_or_mod(other,true);
-        // revert scale modifications
-        if(origscale != 0){
-            des_cast.reserve(origscale);
-            for(long long int i = origscale-1; i>=0;--i){
-                if (i>=cela_cast.size()) des_cast.push_back(digits[0]);
-                else des_cast.push_back(cela_cast[i]);
-            }
-            np.clear();
-            if(origscale >= cela_cast.size()) np.push_back(digits[0]);
-            else np.append(cela_cast, origscale, std::string::npos);
-            cela_cast = std::move(np);
-            scale = origscale;
-        }
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
         return *this;
     }
 
@@ -697,39 +695,8 @@ struct number{
      */
     number & operator %=(const number &other){
         // modulo has the sign of first operand
-        // handle scale:
-        number copy(*this);
-        copy.scale += other.scale;
-        operator/=(other);
-        scale += other.scale;
-        operator*=(other);
-        copy-=*this;
-        //unsigned int origscale = scale;
-        //std::string np;
-        /*if(scale != 0){
-            scale = 0;
-            np.reserve(des_cast.size() + cela_cast.size());
-            np.append(des_cast.rbegin(), des_cast.rend());
-            np.append(cela_cast.begin(), cela_cast.end());
-            cela_cast = std::move(np);
-            des_cast.clear();
-        }
-        div_or_mod(other,true);
-        // revert scale modifications
-        if(origscale != 0){
-            des_cast.reserve(origscale+other.scale);
-            for(long long int i = other.scale+origscale-1; i>=0;--i){
-                if (i>=cela_cast.size()) des_cast.push_back(digits[0]);
-                else des_cast.push_back(cela_cast[i]);
-            }
-            np.clear();
-            if( (other.scale+origscale) >= cela_cast.size()) np.push_back(digits[0]);
-            else np.append(cela_cast, other.scale+origscale, std::string::npos);
-            cela_cast = std::move(np);
-            scale = origscale+other.scale;
-        }*/
-        operator=(std::move(copy));
-        strip_zeroes_and_fix_scale();
+        div_or_mod(other,false);
+        strip_zeroes();
         return *this;
 
     }
@@ -798,9 +765,12 @@ struct number{
             number others(1), help;
             number one(1),two(2);
             if(!expCopy.isPositive){
-                throw unsupported_operation("CAVEAT: Malfunctioning division prohibits negative exponent for power");
-                //(*this) /= number(1); // DOES NOTHING!
-                //expCopy.isPositive = true;
+                //throw unsupported_operation("CAVEAT: Malfunctioning division prohibits negative exponent for power");
+                unsigned int scalebak = scale;
+                scale = cela_cast.size(); // 1/(*this) needs to have good precision
+                (*this) = one/(*this);
+                scale = scalebak;
+                expCopy.isPositive = true;
             }
             // divide and conquer - halve the exponent in each pass
             while(expCopy > one){
@@ -811,7 +781,7 @@ struct number{
             }
             operator*=(others);
         }
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
         return *this;
     }
 
@@ -828,7 +798,6 @@ struct number{
             }
         }
         des_cast.clear();
-        scale = 0;
         return *this;
     }
 
@@ -845,7 +814,6 @@ struct number{
             }
         }
         des_cast.clear();
-        scale = 0;
         return *this;
     }
 
@@ -855,7 +823,6 @@ struct number{
      */
     number& trunc(){
         des_cast.clear();
-        scale = 0;
         return *this;
     }
 
@@ -866,9 +833,7 @@ struct number{
     std::string str() const{
         std::stringstream acc("");
         std::string reversewhole;
-        std::reverse_copy(cela_cast.cbegin(),
-                          cela_cast.cend(),
-                          std::back_inserter(reversewhole));
+        reversewhole.append(cela_cast.crbegin(), cela_cast.crend());
         acc << static_cast<unsigned int>(radix) << "::";
         if( ! isPositive ) acc << "-";
         acc << reversewhole;
@@ -1155,14 +1120,12 @@ struct number{
         cela_cast.swap(other.cela_cast);
         des_cast.swap(other.des_cast);
         std::swap(isPositive, other.isPositive);
-        std::swap(scale, other.scale);
     }
 
 private:
     std::string cela_cast; // BIG_ENDIAN element ordering
     std::string des_cast;  // LITTLE_ENDIAN element ordering
     bool isPositive;
-    std::size_t scale = 0; // number of fractional digits to store
 
     /**
      * @brief Compares two numbers whithout taking sign into account
@@ -1235,7 +1198,6 @@ private:
         std::string result;
         number divisor;
         number dividend;
-        scale = std::max(scale, other.scale);
 
         //dostatečný posun abych obsáhl všechna desetiná čísla, plus nová des. čísla zbytku v případě nenulového scale
         dividend.des_cast.assign(cela_cast.rbegin(), cela_cast.rend());
@@ -1294,24 +1256,22 @@ private:
             des_cast = dividend.des_cast.substr(cela_cast.size());
             scale = 0;
         }
-        strip_zeroes_and_fix_scale();
+        strip_zeroes();
         return *this;
     }
 
     /**
-     * @brief Strip leading 0 and maintain scale
+     * @brief Strip leading and trailing 0
      *
      * If value of whole part is equal to 0, then strips all but the last
      * leading 0 digit, otherwise strips all leading zeroes.
      *
-     * If scale is set as nonzero, it strips or extends the "decimal" part
-     * to lenght equal to scale (extends with digit of value 0, stripping
-     * truncates), otherwise always truncates any trailing zeroes.
+     * Always truncates any trailing zeroes.
      *
      * If only one digit stays, that is a singular 0 in cela_cast,
      * also sets isPositive to true, so we are consistent with sign of zero.
      */
-    void strip_zeroes_and_fix_scale(){
+    void strip_zeroes(){
         std::size_t pos;
         bool isZero;
         if((pos=cela_cast.find_last_not_of(digits[0])) != cela_cast.npos){
@@ -1323,19 +1283,13 @@ private:
             isZero = true;
         }
         // leading zeroes stripped
-        if (scale != 0){
-            des_cast.resize(scale, digits[0]);
-            if ((pos=des_cast.find_last_not_of(digits[0])) != des_cast.npos) isZero = false;
+        if ((pos=des_cast.find_last_not_of(digits[0])) == des_cast.npos){
+            des_cast.clear();
+            // isZero stays as is true && isZero always evals as true
         }
         else {
-            if ((pos=des_cast.find_last_not_of(digits[0])) == des_cast.npos){
-                des_cast.clear();
-                // isZero stays as is true && isZero always evals as true
-            }
-            else {
-                des_cast.resize(pos+1,digits[0]);
-                isZero = false; // false && isZero always evals as false
-            }
+            des_cast.resize(pos+1,digits[0]);
+            isZero = false; // false && isZero always evals as false
         }
         if (isZero) isPositive = true; // 0 is treated as positive
         // trailing zeroes truncated

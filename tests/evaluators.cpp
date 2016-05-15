@@ -8,6 +8,9 @@
 using namespace fixedpoint;
 using namespace std::literals;
 
+template<unsigned char radix>
+std::size_t number<radix>::scale = 0;
+
 TEST_CASE("Postfix eval"){
     decimal easy = decimal::eval_postfix("9 2 @pow 183 + 21 -");
     decimal hard = decimal::eval_postfix("9 2 @pow 183 + 21 - 84 % -75.124 @ceil +");

@@ -14,3 +14,6 @@ Test for constructors assumes the following about integral types:
 `tests` - contains tests for fixedpoint.h
 
 `docs` - contains Doxyfile for generating documentation (html and manpages formats)
+
+
+This project uses [Catch framework](https://github.com/philsquared/Catch) for tests

@@ -1004,27 +1004,45 @@ private:
      * @return result of division if div is true and result of modulo otherwise
      */
     number& div_or_mod(const number other,bool div){
-//        if(other == 0){
-//            throw division_by_zero();
-//        }
+        if(other == 0){
+            throw division_by_zero();
+        }
         std::string result;
         number divisor;
         number dividend;
+        scale = std::max(scale, other.scale);
+
+        //dostatečný posun abych obsáhl všechna desetiná čísla, plus nová des. čísla zbytku v případě nenulového scale
+        dividend.des_cast.assign(cela_cast.rbegin(), cela_cast.rend());
+        dividend.des_cast.append(des_cast);
+
+        divisor.des_cast.assign(other.cela_cast.rbegin(), other.cela_cast.rend());
+        divisor.des_cast.append(other.des_cast);
+
+        size_t dividend_size = cela_cast.size();
+        long long deviation = dividend_size - other.cela_cast.size();
+        if(divisor == 0){
+            throw division_by_zero();
+        }
+
+        /*
         //oba posunu tak, abych měl celá čísla, takže si uložím kam pak posunout výsledek
         long long int final_dec_point = des_cast.size();
         final_dec_point -= other.des_cast.size();
         //převedu na celočíselné dělění
 
+
         //dělitel posunu o počet des. míst do leva
         divisor.cela_cast.clear();
+        if(other.scale < scale) divisor.cela_cast.append(scale - other.scale,digits[0]);
         //nejnižsí indexi jsou nejmenší, takže první nakopiruju obrácenou des_cast
         divisor.cela_cast.append(other.des_cast.rbegin(),other.des_cast.rend());
         //za ni celou část
         divisor.cela_cast.append(other.cela_cast);
+        //zahodím případné úvodní nuly
         std::size_t pos;
         size_t shift =divisor.cela_cast.size();
         if((pos=divisor.cela_cast.find_last_not_of(digits[0]))!=std::string::npos){
-            //zahodím úvodní nuly
             divisor.cela_cast.resize(pos+1);
             //tím jsem efektivně posunul dělitele několik řádů vlevo,
             //což budu muset zohlednit v počtu kroků dělení
@@ -1065,8 +1083,9 @@ private:
 
             }
         };
+         */
         //počet kroků dělení
-        int steps = cela_cast.size()-other.cela_cast.size() + shift;
+        int steps = deviation + scale;//-other.cela_cast.size() + shift + (scale -shift);
 
         if (steps < 0){//dělitel je řádově větší, takže celé tohle číso je zbytek
             if(div) *this = 0;
@@ -1080,32 +1099,51 @@ private:
                 dividend -= divisor;
             }
             result.push_back(digits[tmp]);
-            char c = get(divisor.cela_cast.size() + i );
-            dividend.cela_cast = c + dividend.cela_cast;
+            //char c = get(divisor.cela_cast.size() + i );
+            //dividend.cela_cast = c + dividend.cela_cast;
+             divisor.des_cast.insert(0, 1, digits[0]);
         }
         if(div){
-            cela_cast.assign(result.rbegin(),result.rend());
-            //celočíselné dělení
-            des_cast.clear();
+            int move = result.size() - scale;
+            if(move>0){
+                cela_cast.assign(result.rbegin()+scale,result.rend());
+                des_cast.clear();
+                des_cast.append(result,move, std::string::npos);
+            }else{
+                des_cast.append(-move,digits[0]);
+                des_cast.append(result);
+            }
 
             isPositive = (isPositive == other.isPositive);
         }else{
+                std::string tmp= dividend.des_cast.substr(0,cela_cast.size());
+                std::reverse(tmp.begin(),tmp.end());
+                cela_cast = std::move(tmp);
+                des_cast = dividend.des_cast.substr(cela_cast.size());
+                scale = 0;
+            /*
             //odčítání mohlo zahodit implicitní nuly které možná budu potřebovat
             if( divisor.cela_cast.size() > dividend.cela_cast.size()) dividend.cela_cast.resize(divisor.cela_cast.size(),digits[0]);
-
+            long long cjv = other.des_cast.size() + scale;
+            if(((unsigned)dividend.cela_cast.size()) > cjv)cela_cast.assign(dividend.cela_cast.substr(cjv));
+            else{
+                des_cast.append(cjv - dividend.cela_cast.size(),digits[0]);
+                des_cast.append(dividend.cela_cast);
+            }
             //odstraním vliv posunutí
             if(shift) dividend.cela_cast.append(shift,digits[0]);
+
             if(dividend.cela_cast.size() > other.des_cast.size()){
-                cela_cast.assign(dividend.cela_cast.substr(other.des_cast.size()+1));
-                std::string tmp = dividend.cela_cast.substr(0,other.des_cast.size()+1);
+                cela_cast.assign(dividend.cela_cast.substr(other.des_cast.size() + scale +1));
+                std::string tmp = dividend.cela_cast.substr(0,other.des_cast.size() + scale +1);
                 std::reverse(tmp.begin(),tmp.end());
-                if(other.des_cast.size()<des_cast.size()) tmp.append(des_cast.substr(other.des_cast.size()+1));
+                if(other.des_cast.size()<des_cast.size()) tmp.append(des_cast.substr(other.des_cast.size() + scale +1));
                 des_cast.assign(tmp);
             }else{
                 cela_cast.clear();
                 cela_cast.append(other.des_cast.size() - dividend.cela_cast.size(),digits[0]);
                 cela_cast.append(dividend.cela_cast);
-            }
+            }*/
         }
         strip_zeroes_and_fix_scale();
         return *this;
@@ -1135,10 +1173,10 @@ private:
         // leading zeroes stripped
         if (scale != 0){
             des_cast.resize(scale, digits[0]);
-            if ((pos=des_cast.find_first_not_of(digits[0])) != des_cast.npos) isZero = false;
+            if ((pos=des_cast.find_last_not_of(digits[0])) != des_cast.npos) isZero = false;
         }
         else {
-            if ((pos=des_cast.find_first_not_of(digits[0])) == des_cast.npos){
+            if ((pos=des_cast.find_last_not_of(digits[0])) == des_cast.npos){
                 des_cast.clear();
                 // isZero stays as is true && isZero always evals as true
             }

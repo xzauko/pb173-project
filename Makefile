@@ -19,7 +19,7 @@ default: all
 $(ODIR)/%.o: $(TDIR)/%.cpp $(DEPS) | $(ODIR)
 	$(CXX) -c -o $@ $< $(CXXFLAGS)
 
-all: | $(BDIR)
+all: test | $(BDIR)
 
 $(BDIR):
 	mkdir $(BDIR)

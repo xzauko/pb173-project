@@ -33,6 +33,7 @@ namespace fixedpoint{
 
 #if defined( FIXEDPOINT_CASE_INSENSITIVE ) && ! defined( FIXEDPOINT_CASE_SENSITIVE )
 #define MAX_RADIX (36)
+// str -> value, value -> str translation tables:
 /**
  * @brief Valuations of digits
  *
@@ -159,7 +160,6 @@ struct unsupported_operation: public std::runtime_error{
 };
 
 
-template<unsigned char radix>
 /**
  * <b>The number struct represents the fixedpoint numbers</b>
  * <p>
@@ -204,6 +204,7 @@ template<unsigned char radix>
  * instead.</li>
  * </ol>
  */
+template<unsigned char radix>
 struct number{
 
     /**
@@ -220,8 +221,8 @@ struct number{
      * Constructs a number of zero value and zero scale.
      */
     number():
-        cela_cast{digits[0]},
-        des_cast{},
+        whole{digits[0]},
+        fractional{},
         isPositive(true)
     {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
@@ -308,6 +309,7 @@ struct number{
             ++start;
         }
         // number validity check:
+        // TO DO - remove static_cast;
         if (std::any_of(
                     start,
                     src.cend(),
@@ -323,33 +325,33 @@ struct number{
             throw(invalid_number_format("invalid characters found in input string"));
         }
         // get whole and decimal parts:
-        std::string whole,decimal;
+        std::string wholes,fractionals;
         bool onDecimal = false;
         for (;start!=src.cend();++start){
             if (onDecimal){
-                decimal += *start;
+                fractionals += *start;
             }
             else{
                 if (values[static_cast<int>(*start)] == -2) onDecimal = true;
-                else whole += *start;
+                else wholes += *start;
             }
         }
         // reverse whole part (so it meets storage requirement):
-        std::reverse(whole.begin(), whole.end());
+        std::reverse(wholes.begin(), wholes.end());
         // convert here:
         if (rdx == radix){
-            // only need to assign to members and maybe resize des_cast
-            cela_cast = std::move(whole);
-            des_cast = std::move(decimal);
-            if (fracnum >= 0) des_cast.resize(fracnum, digits[0]);
+            // only need to assign to members and maybe resize fractional
+            whole = std::move(wholes);
+            fractional = std::move(fractionals);
+            if (fracnum >= 0) fractional.resize(fracnum, digits[0]);
         }
         else{
             // convert from base rdx to base radix:
             // convert radix to base rdx:
-            if (fracnum < 0) fracnum = std::ceil(static_cast<double>(rdx)/radix)*decimal.size();
-            auto res = convert_with_vector(whole, decimal, rdx, fracnum);
-            cela_cast = std::move(res.first);
-            des_cast = std::move(res.second);
+            if (fracnum < 0) fracnum = std::ceil(static_cast<double>(rdx)/radix)*fractionals.size();
+            auto res = convert_with_vector(wholes, fractionals, rdx, fracnum);
+            whole = std::move(res.first);
+            fractional = std::move(res.second);
         }
         strip_zeroes();
     }
@@ -360,7 +362,7 @@ struct number{
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
     number(T x):
-        des_cast{},
+        fractional{},
         isPositive(x>=0)
     {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
@@ -377,10 +379,10 @@ struct number{
         }
 #endif
         if (radix == 10){
-            cela_cast = rep;
+            whole = rep;
         }
         else{
-            cela_cast = convert_with_vector(rep,"",10,0).first;
+            whole = convert_with_vector(rep,"",10,0).first;
         }
         strip_zeroes();
     }
@@ -433,13 +435,13 @@ struct number{
         }
 #endif
         if (radix == 10){
-            cela_cast = whole;
-            des_cast = decimal;
+            whole = whole;
+            fractional = decimal;
         }
         else{
             auto res = convert_with_vector(whole,decimal,10,fracnum);
-            cela_cast = std::move(res.first);
-            des_cast = std::move(res.second);
+            whole = std::move(res.first);
+            fractional = std::move(res.second);
         }
         strip_zeroes();
     }
@@ -458,35 +460,35 @@ struct number{
             // flip the resulting sign so that the result is correct
         }
         else{
-            size_t boundary = std::min(des_cast.size(), other.des_cast.size());
+            size_t boundary = std::min(fractional.size(), other.fractional.size());
 
-            // DESATINNA CAST
-            if (des_cast.size() < other.des_cast.size()){
+            // FRACTIONAL PART
+            if (fractional.size() < other.fractional.size()){
                 // possibly partial copy
-                des_cast.append(other.des_cast,
+                fractional.append(other.fractional,
                                 boundary,
-                                other.des_cast.size() - boundary);
+                                other.fractional.size() - boundary);
             }
             int tmp, carry = 0;
             int ourss, theirss;
             for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
-                ourss = static_cast<int>(des_cast[i-1]);
-                theirss = static_cast<int>(other.des_cast[i-1]);
+                ourss = static_cast<int>(fractional[i-1]);
+                theirss = static_cast<int>(other.fractional[i-1]);
                 tmp = values[ourss] + values[theirss] + carry;
                 carry = tmp / radix;
-                des_cast[i-1] = digits[tmp % radix];
+                fractional[i-1] = digits[tmp % radix];
             }
 
-            // CELA CAST
-            if ( other.cela_cast.size() > cela_cast.size()){
-                cela_cast.resize( other.cela_cast.size(), digits[0] );
+            // WHOLE PART
+            if ( other.whole.size() > whole.size()){
+                whole.resize( other.whole.size(), digits[0] );
             }
-            auto our = cela_cast.begin();
-            auto their = other.cela_cast.begin();
-            for ( ; our != cela_cast.end() ; ++our){
+            auto our = whole.begin();
+            auto their = other.whole.begin();
+            for ( ; our != whole.end() ; ++our){
                 ourss = static_cast<int>(*our);
                 tmp = values[ ourss ] + carry;
-                if ( their != other.cela_cast.end() ){
+                if ( their != other.whole.end() ){
                     theirss = static_cast<int>( *( their++ ));
                     tmp += values[ theirss ];
                 }
@@ -495,7 +497,7 @@ struct number{
 
             }
             if ( carry > 0 ){
-                cela_cast.push_back(digits[carry]);
+                whole.push_back(digits[carry]);
             }
         }
         // At worst 1 partial copy (extending the scale)
@@ -512,38 +514,39 @@ struct number{
         }
         //1 copy
         number o1(other);
-        if(cmp_ignore_sig(o1) == -1){//odečítám větší (v abs hodnotě) od menšího, tak je prohodím
+        if(cmp_ignore_sig(o1) == -1){
+            // subtract bigger in abs value from smaller - swap if not the case
             swap(o1);
             isPositive = !isPositive;
         }
-        //dále už předpokladam, že odečítám menší od většího
-        size_t boundary = o1.des_cast.size();
-        // DESATINNA CAST
-        if (des_cast.size() < boundary){
-            des_cast.resize( boundary, digits[0] );
+        // assuming subtraction of smaller from bigger (abs values)
+        size_t boundary = o1.fractional.size();
+        // FRACTIONAL PART
+        if (fractional.size() < boundary){
+            fractional.resize( boundary, digits[0] );
         }
         int tmp, carry = 0;
         for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
-            tmp = values[static_cast<int>(des_cast[i-1])] - values[static_cast<int>(o1.des_cast[i-1])] + carry;
+            tmp = values[static_cast<int>(fractional[i-1])] - values[static_cast<int>(o1.fractional[i-1])] + carry;
             if(tmp < 0) {
                 carry = -1;
                 tmp +=radix;
             }else {
                 carry = 0;
             }
-            des_cast[i-1] = digits[tmp];
+            fractional[i-1] = digits[tmp];
         }
 
-        // CELA CAST
-        if ( o1.cela_cast.size() > cela_cast.size()){
-            cela_cast.resize( o1.cela_cast.size(), digits[0] );
+        // DECIMAL PART
+        if ( o1.whole.size() > whole.size()){
+            whole.resize( o1.whole.size(), digits[0] );
         }
         size_t index = 0;
         size_t first_digit = 0;
-        for ( index = 0; index < cela_cast.size() ;index++){
-            tmp = values[static_cast<int>( cela_cast.at(index))] + carry;
-            if ( index < o1.cela_cast.size() ){
-                tmp -= values[static_cast<int>( o1.cela_cast.at(index)) ];
+        for ( index = 0; index < whole.size() ;index++){
+            tmp = values[static_cast<int>( whole.at(index))] + carry;
+            if ( index < o1.whole.size() ){
+                tmp -= values[static_cast<int>( o1.whole.at(index)) ];
             }
             if(tmp < 0) {
                 carry = -1;
@@ -552,10 +555,10 @@ struct number{
                 carry = 0;
             }
             if(0 != tmp) first_digit = index;
-            cela_cast.at(index) =  digits[tmp];
+            whole.at(index) =  digits[tmp];
 
         }
-        cela_cast.resize(first_digit + 1, digits[0] );
+        whole.resize(first_digit + 1, digits[0] );
         strip_zeroes();
         // At worst 1 copy
         // or 1 copy and whatever += does
@@ -569,57 +572,57 @@ struct number{
         number one(1), zero(0);
         if ( (cmp_ignore_sig(one) == 0) ||
              (other.cmp_ignore_sig(zero) == 0) ){
-            cela_cast = other.cela_cast;
-            des_cast = other.des_cast;
+            whole = other.whole;
+            fractional = other.fractional;
         }
         else if ( (other.cmp_ignore_sig(one) == 0) ||
                   (cmp_ignore_sig(zero) == 0) ){
             return *this;
         }
         else{
-            //čísla reprezentuji jako zlomky x/y, kde y má formát 100...0
-            //pocet desetinych míst
-            size_t decimals = std::max(des_cast.size(), other.des_cast.size());
-            //ocekavana maximalni velikost výsledku
-            size_t size = (decimals + cela_cast.size()) + (decimals + other.cela_cast.size());
-            // konecna velkost desatinnej casti:
-            size_t endfrac = std::max(des_cast.size(), other.des_cast.size());
+            // representing numbers as fraxtions x/y, where y has format of
+            // 1000...0 (number of fractional places zeroes)
+            size_t decimals = std::max(fractional.size(), other.fractional.size());
+            // expected maximum size of product
+            size_t size = (decimals + whole.size()) + (decimals + other.whole.size());
+            // size of fractional part (precision)
+            size_t endfrac = std::max(fractional.size(), other.fractional.size());
 
             const number a(*this);
             const number& b = other;
 
             const size_t dec_point = 2 * (decimals);
-            des_cast.clear();
-            des_cast.resize(dec_point, digits[0] );
-            cela_cast.clear();
-            cela_cast.resize(size, digits[0] );
+            fractional.clear();
+            fractional.resize(dec_point, digits[0] );
+            whole.clear();
+            whole.resize(size, digits[0] );
 
             auto product = [&dec_point, this](size_t i) -> char&{
                 if(i <dec_point){
                     i = dec_point - i -1;
-                    return des_cast.at(i);
+                    return fractional.at(i);
                 }else{
                     i = i - dec_point;
-                    return cela_cast.at(i);
+                    return whole.at(i);
                 }
             };
             auto get = [&decimals](const number &from,size_t i) -> const char&{
                 if(i <decimals){
                     i = decimals - i -1;
-                    if(i < from.des_cast.size()) return from.des_cast.at(i);
-                    //implicitní nuly
+                    if(i < from.fractional.size()) return from.fractional.at(i);
+                    // implicit zeroes
                     else return digits[0];
                 }else{
                     i = i - decimals;
-                    if(i < from.cela_cast.size()) return from.cela_cast.at(i);
-                    //implicitní nuly
+                    if(i < from.whole.size()) return from.whole.at(i);
+                    // implicit zeroes
                     else return digits[0];
 
                 }
             };
 
-            const size_t p = b.cela_cast.size() + decimals;
-            const size_t q = a.cela_cast.size() + decimals;
+            const size_t p = b.whole.size() + decimals;
+            const size_t q = a.whole.size() + decimals;
             for(size_t b_i = 0; b_i < p; b_i++){
                 unsigned char carry= 0;
                 for(size_t a_i = 0; a_i < q; a_i++){
@@ -632,11 +635,11 @@ struct number{
                 tmp += carry;
                 product(b_i + q) = digits[tmp];
             }
-            size_t pos = cela_cast.find_last_not_of(digits[0]);
-            if(pos != cela_cast.npos) pos += 1;
+            size_t pos = whole.find_last_not_of(digits[0]);
+            if(pos != whole.npos) pos += 1;
             else pos = 1;
-            cela_cast.resize(pos, digits[0]);
-            des_cast.resize(endfrac, digits[0]);
+            whole.resize(pos, digits[0]);
+            fractional.resize(endfrac, digits[0]);
         }
         strip_zeroes();
         return *this;
@@ -711,9 +714,9 @@ struct number{
      * @throw unsupported_operation when attemted to power with fractional number
      */
     number& pow(const number & exponent){
-        // kontrola desatinnej casti:
-        if(! std::all_of(exponent.des_cast.cbegin(),
-                         exponent.des_cast.cend(),
+        // fractional part check - TO DO - implement
+        if(! std::all_of(exponent.fractional.cbegin(),
+                         exponent.fractional.cend(),
                          [](const char x){return x==digits[0];}
                          )){
             throw unsupported_operation("Only integer exponent is suported for power function!");
@@ -729,7 +732,7 @@ struct number{
             }
         }
         else{
-            //vyřeším záporný exponent
+            // negative exponent handling
             number expCopy(exponent);
             number others(1), help;
             number one(1),two(2);
@@ -760,14 +763,14 @@ struct number{
      * @return Reference to *this
      */
     number& floor(){
-        if( !std::all_of( des_cast.cbegin(),
-                          des_cast.cend(),
+        if( !std::all_of( fractional.cbegin(),
+                          fractional.cend(),
                           [](char x){return x==digits[0];}) ){
             if (! isPositive){
                 operator--();
             }
         }
-        des_cast.clear();
+        fractional.clear();
         return *this;
     }
 
@@ -776,14 +779,14 @@ struct number{
      * @return Reference to *this
      */
     number& ceil(){
-        if( !std::all_of( des_cast.cbegin(),
-                          des_cast.cend(),
+        if( !std::all_of( fractional.cbegin(),
+                          fractional.cend(),
                           [](char x){return x==digits[0];}) ){
             if (isPositive){
                 operator++();
             }
         }
-        des_cast.clear();
+        fractional.clear();
         return *this;
     }
 
@@ -792,7 +795,7 @@ struct number{
      * @return Reference to *this
      */
     number& trunc(){
-        des_cast.clear();
+        fractional.clear();
         return *this;
     }
 
@@ -803,12 +806,12 @@ struct number{
     std::string str() const{
         std::stringstream acc("");
         std::string reversewhole;
-        reversewhole.append(cela_cast.crbegin(), cela_cast.crend());
+        reversewhole.append(whole.crbegin(), whole.crend());
         acc << static_cast<unsigned int>(radix) << "::";
         if( ! isPositive ) acc << "-";
         acc << reversewhole;
-        if( ! des_cast.empty() ){
-            acc << "." << des_cast;
+        if( ! fractional.empty() ){
+            acc << "." << fractional;
         }
         std::string result(acc.str());
         return result;
@@ -941,7 +944,6 @@ struct number{
      */
     static number eval_infix(const std::string & expr){
         using std::string; using namespace std::literals;
-        // xzauko number<16>::eval_infix("10::23 + 2::100010")
         auto getToken = [
                 beg = expr.cbegin(),
                 end = expr.cend(),
@@ -1004,12 +1006,9 @@ struct number{
         std::vector<string> operationStack, postfixBuild;
         string postfix, lparen{'(','[','{'}, rparen{')',']','}'};
         std::istringstream inp(expr);
-        //while(x!=expr.cend() && *x==' ') ++x; //skip spaces at front of string
         auto x = expr.cbegin();
         string now;
-        //while (x!=expr.cend()){
         while( getToken(now,x) ){
-            //while(x!=expr.cend() && *x==' ') ++x; //skip spaces after expression
             if(isOperator(now)){
                 while( (!operationStack.empty()) &&
                        isOperator(operationStack.back()) &&
@@ -1053,7 +1052,7 @@ struct number{
                     operationStack.pop_back();
                 }
             }
-            else{ //it's a number or something in place of a number
+            else{ // it's a number or something in place of a number
                 postfixBuild.push_back(std::move(now));
             }
         }
@@ -1087,14 +1086,15 @@ struct number{
      * @param other number to swap with
      */
     void swap( number& other ){
-        cela_cast.swap(other.cela_cast);
-        des_cast.swap(other.des_cast);
+        whole.swap(other.whole);
+        fractional.swap(other.fractional);
         std::swap(isPositive, other.isPositive);
     }
 
 private:
-    std::string cela_cast; // BIG_ENDIAN element ordering
-    std::string des_cast;  // LITTLE_ENDIAN element ordering
+    // TO DO not string, to do english name
+    std::string whole; // BIG_ENDIAN element ordering
+    std::string fractional;  // LITTLE_ENDIAN element ordering
     bool isPositive;
 
     /**
@@ -1103,41 +1103,41 @@ private:
      * @return 0 if equal, n<0 if *this<other, n>0 if *this>other
      */
     int cmp_ignore_sig(const number &other) const{
-        //přeskočení případných nul na začátku
-        size_t pos = cela_cast.find_last_not_of('0');
-        size_t other_pos = other.cela_cast.find_last_not_of('0');
-        if(cela_cast.npos == pos) pos=0;
-        if(other.cela_cast.npos == other_pos) other_pos=0;
+        // skip possible leading zeroes - TO DO test if needed and remove if not
+        size_t pos = whole.find_last_not_of('0');
+        size_t other_pos = other.whole.find_last_not_of('0');
+        if(whole.npos == pos) pos=0;
+        if(other.whole.npos == other_pos) other_pos=0;
         if(pos != other_pos){
             return (pos > other_pos) ? 1 : -1;
         }else{
             while(pos > 0){
-                if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
-                    return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
+                if(values[static_cast<int>(whole[pos])] != values[static_cast<int>(other.whole[pos])]){
+                    return (values[static_cast<int>(whole[pos])] > values[static_cast<int>(other.whole[pos])]) ? 1 : -1;
                 }
                 pos--;
             }
-            //porovnání nultých prvků celých částí
-            if(values[static_cast<int>(cela_cast[pos])] != values[static_cast<int>(other.cela_cast[pos])]){
-                return (values[static_cast<int>(cela_cast[pos])] > values[static_cast<int>(other.cela_cast[pos])]) ? 1 : -1;
+            // comparison of digits on 0th power
+            if(values[static_cast<int>(whole[pos])] != values[static_cast<int>(other.whole[pos])]){
+                return (values[static_cast<int>(whole[pos])] > values[static_cast<int>(other.whole[pos])]) ? 1 : -1;
             }
-            //cela cast je stejna, rozhodne desetina cast
-            size_t limit = (des_cast.size() < other.des_cast.size()) ? des_cast.size() : other.des_cast.size();
+            // fractional part must decide
+            size_t limit = (fractional.size() < other.fractional.size()) ? fractional.size() : other.fractional.size();
             while(pos < limit){
-                if(values[static_cast<int>(des_cast[pos])] != values[static_cast<int>(other.des_cast[pos])]){
-                    return (values[static_cast<int>(des_cast[pos])] > values[static_cast<int>(other.des_cast[pos])]) ? 1 : -1;
+                if(values[static_cast<int>(fractional[pos])] != values[static_cast<int>(other.fractional[pos])]){
+                    return (values[static_cast<int>(fractional[pos])] > values[static_cast<int>(other.fractional[pos])]) ? 1 : -1;
                 }
                 pos++;
             }
-            //porovnání proti implicitním nulám
-            if(other.des_cast.size() > limit){
-                for (;pos < other.des_cast.size();pos++) {
-                    if (values[static_cast<int>(other.des_cast[pos])] > 0) return -1;
+            // comparing against implicit zeroes
+            if(other.fractional.size() > limit){
+                for (;pos < other.fractional.size();pos++) {
+                    if (values[static_cast<int>(other.fractional[pos])] > 0) return -1;
                 }
             }
-            if(des_cast.size() > limit){
-                for (;pos < des_cast.size();pos++) {
-                    if (values[static_cast<int>(des_cast[pos])] > 0) return 1;
+            if(fractional.size() > limit){
+                for (;pos < fractional.size();pos++) {
+                    if (values[static_cast<int>(fractional[pos])] > 0) return 1;
                 }
             }
             return 0;
@@ -1148,6 +1148,7 @@ private:
      * @brief Rise this number to the power of positive integer exponent
      * @param exponent nubmer representing positive integer value
      */
+    /*
     void int_pow(number && exponent){
         number nula(0);
         number orig(*this);
@@ -1157,6 +1158,7 @@ private:
             --exponent;
         }
     }
+    */
 
     /**
      * @brief Divides this by other and returns either the result of division or modulo based on the div parameter
@@ -1169,31 +1171,34 @@ private:
         number divisor;
         number dividend;
 
-        //dostatečný posun abych obsáhl všechna desetiná čísla, plus nová des. čísla zbytku v případě nenulového scale
-        dividend.des_cast.assign(cela_cast.rbegin(), cela_cast.rend());
-        dividend.des_cast.append(des_cast);
+        // shift so that handling is possible as whole numbers,
+        // and account for possible new numbers of the modulo (nonzero scale)
+        dividend.fractional.assign(whole.rbegin(), whole.rend());
+        dividend.fractional.append(fractional);
 
-        divisor.des_cast.assign(other.cela_cast.rbegin(), other.cela_cast.rend());
+        divisor.fractional.assign(other.whole.rbegin(), other.whole.rend());
         size_t shift = 0;
         if(divisor == 0){
-            shift = other.des_cast.find_last_not_of(digits[0]);
+            shift = other.fractional.find_last_not_of(digits[0]);
 
             if (std::string::npos == shift) throw division_by_zero();
 
-            divisor.des_cast.assign(other.des_cast.substr(shift));
-            //upřímě netuším proč shift++, ale jinak to vrací výsledek o řád menší než by měl být
-            shift++;
+            divisor.fractional.assign(other.fractional.substr(shift));
+            // TO DO - investigate logical reason for ++shift;
+            ++shift;
         }else{
-            divisor.des_cast.append(other.des_cast);
+            divisor.fractional.append(other.fractional);
         }
 
-        size_t dividend_size = cela_cast.size();
-        long long deviation = dividend_size - other.cela_cast.size();
+        size_t dividend_size = whole.size();
+        long long deviation = dividend_size - other.whole.size();
 
-        //počet kroků dělení
+        // number of division steps
         int steps = deviation + scale + shift;
 
-        if (steps < 0){//dělitel je řádově větší, takže celé tohle číso je zbytek
+        if (steps < 0){
+            // divisor is bigger by order(s) of magnitude,
+            // the whole dividend is the modulo
             if(div) *this = 0;
             return *this;
         }
@@ -1205,25 +1210,25 @@ private:
                 dividend -= divisor;
             }
             result.push_back(digits[tmp]);
-            divisor.des_cast.insert(0, 1, digits[0]);
+            divisor.fractional.insert(0, 1, digits[0]);
         }
         if(div){
             int move = result.size() - scale;
             if(move>0){
-                cela_cast.assign(result.rbegin()+scale,result.rend());
-                des_cast.clear();
-                des_cast.append(result,move, std::string::npos);
+                whole.assign(result.rbegin()+scale,result.rend());
+                fractional.clear();
+                fractional.append(result,move, std::string::npos);
             }else{
-                des_cast.append(-move,digits[0]);
-                des_cast.append(result);
+                fractional.append(-move,digits[0]);
+                fractional.append(result);
             }
 
             isPositive = (isPositive == other.isPositive);
         }else{
-            std::string tmp= dividend.des_cast.substr(0,cela_cast.size());
+            std::string tmp= dividend.fractional.substr(0,whole.size());
             std::reverse(tmp.begin(),tmp.end());
-            cela_cast = std::move(tmp);
-            des_cast = dividend.des_cast.substr(cela_cast.size());
+            whole = std::move(tmp);
+            fractional = dividend.fractional.substr(whole.size());
             scale = 0;
         }
         strip_zeroes();
@@ -1238,27 +1243,27 @@ private:
      *
      * Always truncates any trailing zeroes.
      *
-     * If only one digit stays, that is a singular 0 in cela_cast,
+     * If only one digit stays, that is a singular 0 in whole,
      * also sets isPositive to true, so we are consistent with sign of zero.
      */
     void strip_zeroes(){
         std::size_t pos;
         bool isZero;
-        if((pos=cela_cast.find_last_not_of(digits[0])) != cela_cast.npos){
-            cela_cast.resize(pos+1,digits[0]);
+        if((pos=whole.find_last_not_of(digits[0])) != whole.npos){
+            whole.resize(pos+1,digits[0]);
             isZero = false;
         }
         else{
-            cela_cast.resize(1,digits[0]);
+            whole.resize(1,digits[0]);
             isZero = true;
         }
         // leading zeroes stripped
-        if ((pos=des_cast.find_last_not_of(digits[0])) == des_cast.npos){
-            des_cast.clear();
+        if ((pos=fractional.find_last_not_of(digits[0])) == fractional.npos){
+            fractional.clear();
             // isZero stays as is true && isZero always evals as true
         }
         else {
-            des_cast.resize(pos+1,digits[0]);
+            fractional.resize(pos+1,digits[0]);
             isZero = false; // false && isZero always evals as false
         }
         if (isZero) isPositive = true; // 0 is treated as positive

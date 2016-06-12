@@ -4,6 +4,12 @@
  * @author Tibor Zauko
  * @brief Single include implementation of fixedpoint arithmetic library.
  */
+// TO DO list:
+// Fix multiplication
+// Implement long division for div_or_mod
+// Implement general power calculations
+// Implement a more memory friendly _number struct
+
 
 //          Copyright Michal Pochobradský 2016.
 //          Copyright Tibor Zauko 2016.
@@ -30,6 +36,93 @@
 #endif
 
 namespace fixedpoint{
+/**
+ * @brief The _number struct stores the values of the number's whole and fractional part
+ */
+template<unsigned char max_digit_value>
+struct _number{
+
+    _number(){}
+
+    _number(std::size_t newSize, int value){
+        _data.resize(newSize,value);
+    }
+
+    _number(const _number &) = default;
+    _number(_number &&) = default;
+    _number & operator=(const _number &) = default;
+    _number & operator=(_number &&) = default;
+
+    /**
+     * @brief get returns a digit of the stored number
+     * @param index determines which digit is returned
+     * @return value of the requested digit, 0 if nonexistent
+     */
+    int get(std::size_t index) const{
+        return (index<_data.size()?_data[index]:0);
+    }
+    /**
+     * @brief set sets a digit of number to value
+     *
+     * If specified digit does not exist, it creates a place for it
+     *
+     * @param index determines which digit to set
+     * @param what  what value to set the choosen digit
+     */
+    void set(std::size_t index, int what){
+        if(index >= _data.size()) {
+            _data.resize(index,0);
+            _data.push_back(what);
+        }
+        else{
+            _data[index] = what;
+        }
+    }
+
+    std::size_t size() const{
+        return _data.size();
+    }
+    void resize(std::size_t newSize, int def_value){
+        _data.resize(newSize,def_value);
+    }
+    void clear(){
+        _data.clear();
+    }
+
+    bool empty() const{
+        return _data.empty();
+    }
+    bool all_of(int value) const{
+        return std::all_of(_data.cbegin(),
+                           _data.cend(),
+                           [value](const int x){
+            return x==value;
+        });
+    }
+
+    void push(int value){
+        _data.push_back(value);
+    }
+
+    int pop(){
+        int rval = _data.back();
+        _data.pop_back();
+        return rval;
+    }
+
+    int back() const{
+        return _data.back();
+    }
+    //int front() const;
+
+    void swap(_number & o){
+        _data.swap(o._data);
+    }
+
+private:
+    // _data;
+    std::vector<uint8_t> _data;
+};
 
 #if defined( FIXEDPOINT_CASE_INSENSITIVE ) && ! defined( FIXEDPOINT_CASE_SENSITIVE )
 #define MAX_RADIX (36)
@@ -221,12 +314,12 @@ struct number{
      * Constructs a number of zero value and zero scale.
      */
     number():
-        whole{digits[0]},
-        fractional{},
         isPositive(true)
     {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
+        whole.resize(1,0);
+        fractional.resize(0,0);
     }
     /**
      * @brief String constructor
@@ -326,6 +419,7 @@ struct number{
         }
         // get whole and decimal parts:
         std::string wholes,fractionals;
+        std::vector<uint8_t> wp,fp;
         bool onDecimal = false;
         for (;start!=src.cend();++start){
             if (onDecimal){
@@ -337,22 +431,36 @@ struct number{
             }
         }
         // reverse whole part (so it meets storage requirement):
-        std::reverse(wholes.begin(), wholes.end());
+        //std::reverse(wholes.begin(), wholes.end());
+        auto converter = [](const int x){return values[x];};
+        wp.reserve(wholes.size()); fp.reserve(fractionals.size());
+        std::transform(wholes.crbegin(),
+                       wholes.crend(),
+                       std::back_inserter(wp),
+                       converter);
+        std::transform(fractionals.begin(),
+                       fractionals.end(),
+                       std::back_inserter(fp),
+                       converter);
         // convert here:
-        if (rdx == radix){
-            // only need to assign to members and maybe resize fractional
-            whole = std::move(wholes);
-            fractional = std::move(fractionals);
-            if (fracnum >= 0) fractional.resize(fracnum, digits[0]);
-        }
-        else{
+        if (rdx != radix){
             // convert from base rdx to base radix:
             // convert radix to base rdx:
-            if (fracnum < 0) fracnum = std::ceil(static_cast<double>(rdx)/radix)*fractionals.size();
-            auto res = convert_with_vector(wholes, fractionals, rdx, fracnum);
-            whole = std::move(res.first);
-            fractional = std::move(res.second);
+            if (fracnum < 0) fracnum = std::ceil(static_cast<double>(rdx)/radix)*fp.size();
+            auto res = convert_with_vector(wp, fp, rdx, fracnum);
+            wp = std::move(res.first);
+            fp = std::move(res.second);
         }
+        else{
+            if(fracnum<0) fracnum = fp.size();
+        }
+        for(std::size_t i = 0; i<wp.size();++i){
+            whole.set(i,wp[i]);
+        }
+        for(std::size_t i = 0; i<fp.size();++i){
+            fractional.set(i,fp[i]);
+        }
+        fractional.resize(fracnum,0);
         strip_zeroes();
     }
 
@@ -362,27 +470,23 @@ struct number{
      */
     template<typename T, typename = decltype(static_cast<std::true_type>(std::is_integral<T>()))>
     number(T x):
-        fractional{},
+        fractional(),
         isPositive(x>=0)
     {
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
-        std::string rep = std::to_string(x); // obtain string representation
-        std::reverse(rep.begin(), rep.end()); // reverse string - BIG ENDIAN storage
-        if (!isPositive) rep.pop_back(); // get rid of - sign
-#if !(defined(FIXEDPOINT_CASE_INSENSITIVE) || defined(FIXEDPOINT_CASE_SENSITIVE))
-        // only perform the following
-        // if we can't suppose anything about digits[]
-        for (auto x = rep.begin(); x!=rep.end(); ++x){
-            // convert from digits 0-9 to whatever our encoding uses
-            *x = digits[*x-'0'];
+        std::size_t index=0; // obtain string representation
+        //if (!isPositive) rep.pop_back(); // get rid of - sign
+        int help;
+        while(x != 0){
+            help = x%radix;
+            if(help<0) help *= -1;
+            whole.set(index,help);
+            x/=radix;
+            ++index;
         }
-#endif
-        if (radix == 10){
-            whole = rep;
-        }
-        else{
-            whole = convert_with_vector(rep,"",10,0).first;
+        if(whole.size() == 0){
+            whole.resize(1,0);
         }
         strip_zeroes();
     }
@@ -399,7 +503,7 @@ struct number{
      * @param x value to construct number with
      * @param scale how many fractional places to calculate (in target radix)
      */
-    template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
+    /*template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
     explicit number(T x, unsigned int fracnum = 5):
         isPositive(x>=0)
     {
@@ -444,7 +548,7 @@ struct number{
             fractional = std::move(res.second);
         }
         strip_zeroes();
-    }
+    }*/
 
     number(const number &) = default;
     number(number &&) = default;
@@ -465,39 +569,28 @@ struct number{
             // FRACTIONAL PART
             if (fractional.size() < other.fractional.size()){
                 // possibly partial copy
-                fractional.append(other.fractional,
-                                boundary,
-                                other.fractional.size() - boundary);
-            }
-            int tmp, carry = 0;
-            int ourss, theirss;
-            for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
-                ourss = static_cast<int>(fractional[i-1]);
-                theirss = static_cast<int>(other.fractional[i-1]);
-                tmp = values[ourss] + values[theirss] + carry;
-                carry = tmp / radix;
-                fractional[i-1] = digits[tmp % radix];
-            }
-
-            // WHOLE PART
-            if ( other.whole.size() > whole.size()){
-                whole.resize( other.whole.size(), digits[0] );
-            }
-            auto our = whole.begin();
-            auto their = other.whole.begin();
-            for ( ; our != whole.end() ; ++our){
-                ourss = static_cast<int>(*our);
-                tmp = values[ ourss ] + carry;
-                if ( their != other.whole.end() ){
-                    theirss = static_cast<int>( *( their++ ));
-                    tmp += values[ theirss ];
+                fractional.resize(other.fractional.size(),0);
+                for(std::size_t i = boundary;i<other.fractional.size();++i){
+                    fractional.set(i,other.fractional.get(i));
                 }
-                carry = tmp / radix;
-                *our = digits[ tmp % radix ];
-
+            }
+            uint64_t carry = 0;
+            for (std::size_t i = boundary; i>0; --i ){
+                carry += fractional.get(i-1) + other.fractional.get(i-1);
+                fractional.set(i-1,carry%radix);
+                carry /= radix;
+            }
+            // WHOLE PART
+            if ( other.whole.size() > whole.size() ){
+                whole.resize(other.whole.size(),0);
+            }
+            for (std::size_t i = 0; i < whole.size() ; ++i){
+                carry += whole.get(i) + other.whole.get(i);
+                whole.set(i,carry%radix);
+                carry /= radix;
             }
             if ( carry > 0 ){
-                whole.push_back(digits[carry]);
+                whole.push(carry);
             }
         }
         // At worst 1 partial copy (extending the scale)
@@ -520,33 +613,38 @@ struct number{
             isPositive = !isPositive;
         }
         // assuming subtraction of smaller from bigger (abs values)
-        size_t boundary = o1.fractional.size();
+        std::size_t boundary = o1.fractional.size();
         // FRACTIONAL PART
         if (fractional.size() < boundary){
-            fractional.resize( boundary, digits[0] );
+            fractional.resize( o1.fractional.size(), 0 );
         }
         int tmp, carry = 0;
-        for ( size_t i = boundary; i>0; --i ){ // easier than with iterators
-            tmp = values[static_cast<int>(fractional[i-1])] - values[static_cast<int>(o1.fractional[i-1])] + carry;
+        for ( std::size_t i = boundary; i>0; --i ){ // easier than with iterators
+            //tmp = values[static_cast<int>(fractional[i-1])] - values[static_cast<int>(o1.fractional[i-1])] + carry;
+            tmp = fractional.get(i-1) - o1.fractional.get(i-1) + carry;
             if(tmp < 0) {
                 carry = -1;
                 tmp +=radix;
             }else {
                 carry = 0;
             }
-            fractional[i-1] = digits[tmp];
+            fractional.set(i-1,tmp);
         }
 
-        // DECIMAL PART
+        // WHOLE PART
         if ( o1.whole.size() > whole.size()){
-            whole.resize( o1.whole.size(), digits[0] );
+            whole.resize( o1.whole.size(), 0 );
         }
-        size_t index = 0;
-        size_t first_digit = 0;
-        for ( index = 0; index < whole.size() ;index++){
-            tmp = values[static_cast<int>( whole.at(index))] + carry;
-            if ( index < o1.whole.size() ){
-                tmp -= values[static_cast<int>( o1.whole.at(index)) ];
+        std::size_t index = 0;
+        std::size_t first_digit = 0;
+        std::size_t ourS = whole.size();
+        std::size_t othS = o1.whole.size();
+        for ( index = 0; index < ourS ;index++){
+            //tmp = values[static_cast<int>( whole.at(index))] + carry;
+            tmp = whole.get(index) + carry;
+            if ( index < othS ){
+                //tmp -= values[static_cast<int>( o1.whole.at(index)) ];
+                tmp -= o1.whole.get(index);
             }
             if(tmp < 0) {
                 carry = -1;
@@ -554,11 +652,11 @@ struct number{
             }else {
                 carry = 0;
             }
-            if(0 != tmp) first_digit = index;
-            whole.at(index) =  digits[tmp];
-
+            if(tmp != 0) first_digit = index;
+            //whole.at(index) =  digits[tmp];
+            whole.set(index,tmp);
         }
-        whole.resize(first_digit + 1, digits[0] );
+        whole.resize(first_digit + 1, 0 );
         strip_zeroes();
         // At worst 1 copy
         // or 1 copy and whatever += does
@@ -584,7 +682,8 @@ struct number{
             // 1000...0 (number of fractional places zeroes)
             size_t decimals = std::max(fractional.size(), other.fractional.size());
             // expected maximum size of product
-            size_t size = (decimals + whole.size()) + (decimals + other.whole.size());
+            size_t size = (decimals + whole.size()) +
+                    (decimals + other.whole.size());
             // size of fractional part (precision)
             size_t endfrac = std::max(fractional.size(), other.fractional.size());
 
@@ -593,30 +692,30 @@ struct number{
 
             const size_t dec_point = 2 * (decimals);
             fractional.clear();
-            fractional.resize(dec_point, digits[0] );
+            //fractional.resize(dec_point, digits[0] );
             whole.clear();
-            whole.resize(size, digits[0] );
+            whole.resize(size, 0 );
 
-            auto product = [&dec_point, this](size_t i) -> char&{
-                if(i <dec_point){
+            auto product = [&dec_point, this](std::size_t i, int what) -> void{
+                if(i < dec_point){
                     i = dec_point - i -1;
-                    return fractional.at(i);
+                    fractional.set(i,what);
                 }else{
                     i = i - dec_point;
-                    return whole.at(i);
+                    whole.set(i,what);
                 }
             };
-            auto get = [&decimals](const number &from,size_t i) -> const char&{
+            auto get = [&decimals](const number &from,size_t i) -> int{
                 if(i <decimals){
                     i = decimals - i -1;
-                    if(i < from.fractional.size()) return from.fractional.at(i);
+                    if(i < from.fractional.size()) return from.fractional.get(i);
                     // implicit zeroes
-                    else return digits[0];
+                    else return 0;
                 }else{
                     i = i - decimals;
-                    if(i < from.whole.size()) return from.whole.at(i);
+                    if(i < from.whole.size()) return from.whole.get(i);
                     // implicit zeroes
-                    else return digits[0];
+                    else return 0;
 
                 }
             };
@@ -626,20 +725,20 @@ struct number{
             for(size_t b_i = 0; b_i < p; b_i++){
                 unsigned char carry= 0;
                 for(size_t a_i = 0; a_i < q; a_i++){
-                    unsigned long tmp = values[static_cast<int>(product(a_i + b_i))];
-                    tmp += carry + values[static_cast<int>(get(a, a_i ))] * values[static_cast<int>(get(b, b_i))];
+                    unsigned long tmp = get(*this,a_i + b_i);
+                    tmp += carry + get(a, a_i ) * get(b, b_i);
                     carry = tmp / radix;
-                    product(a_i + b_i) = digits[tmp % radix];
+                    product(a_i + b_i, tmp % radix);
                 }
-                unsigned long tmp = values[static_cast<int>(product(b_i + q))];
+                unsigned long tmp = get(*this,b_i + q);
                 tmp += carry;
-                product(b_i + q) = digits[tmp];
+                product(b_i + q, tmp);
             }
-            size_t pos = whole.find_last_not_of(digits[0]);
-            if(pos != whole.npos) pos += 1;
-            else pos = 1;
-            whole.resize(pos, digits[0]);
-            fractional.resize(endfrac, digits[0]);
+            //size_t pos = whole.find_last_not_of(digits[0]);
+            //if(pos != whole.npos) pos += 1;
+            //else pos = 1;
+            //whole.resize(pos, 0);
+            fractional.resize(endfrac, 0);
         }
         strip_zeroes();
         return *this;
@@ -715,10 +814,7 @@ struct number{
      */
     number& pow(const number & exponent){
         // fractional part check - TO DO - implement
-        if(! std::all_of(exponent.fractional.cbegin(),
-                         exponent.fractional.cend(),
-                         [](const char x){return x==digits[0];}
-                         )){
+        if(! exponent.fractional.all_of(0)){
             throw unsupported_operation("Only integer exponent is suported for power function!");
         }
         // fast path for exponent 0
@@ -763,9 +859,7 @@ struct number{
      * @return Reference to *this
      */
     number& floor(){
-        if( !std::all_of( fractional.cbegin(),
-                          fractional.cend(),
-                          [](char x){return x==digits[0];}) ){
+        if( !fractional.all_of(0) ){
             if (! isPositive){
                 operator--();
             }
@@ -779,9 +873,7 @@ struct number{
      * @return Reference to *this
      */
     number& ceil(){
-        if( !std::all_of( fractional.cbegin(),
-                          fractional.cend(),
-                          [](char x){return x==digits[0];}) ){
+        if( !fractional.all_of(0) ){
             if (isPositive){
                 operator++();
             }
@@ -805,13 +897,22 @@ struct number{
      */
     std::string str() const{
         std::stringstream acc("");
-        std::string reversewhole;
-        reversewhole.append(whole.crbegin(), whole.crend());
+        //std::string reversewhole;
+        //reversewhole.append(whole.crbegin(), whole.crend());
         acc << static_cast<unsigned int>(radix) << "::";
         if( ! isPositive ) acc << "-";
-        acc << reversewhole;
+        //acc << reversewhole;
+        std::size_t i = whole.size()-1;
+        while( i>0 && whole.get(i)==0 ) --i;
+        for (; i>0;--i){
+            acc << digits[whole.get(i)];
+        }
+        acc << digits[whole.get(0)];
         if( ! fractional.empty() ){
-            acc << "." << fractional;
+            acc << "." ;
+            for(i=0;i<fractional.size();++i){
+                acc << digits[fractional.get(i)];
+            }
         }
         std::string result(acc.str());
         return result;
@@ -1005,7 +1106,7 @@ struct number{
         };
         std::vector<string> operationStack, postfixBuild;
         string postfix, lparen{'(','[','{'}, rparen{')',']','}'};
-        std::istringstream inp(expr);
+        //std::istringstream inp(expr);
         auto x = expr.cbegin();
         string now;
         while( getToken(now,x) ){
@@ -1086,16 +1187,61 @@ struct number{
      * @param other number to swap with
      */
     void swap( number& other ){
+        // TO DO - implement swap or change to std::swap
         whole.swap(other.whole);
         fractional.swap(other.fractional);
         std::swap(isPositive, other.isPositive);
     }
 
 private:
-    // TO DO not string, to do english name
-    std::string whole; // BIG_ENDIAN element ordering
-    std::string fractional;  // LITTLE_ENDIAN element ordering
+    /**
+     * @brief blockSize Number of bits required to store a digit of radix
+     *
+     * Terminology:
+     * * a 'block' is is a sequence of blockSize bits representing a digit,
+     * * a 'cell' is an element in a vector.
+     */
+    //static const std::size_t blockSize = std::floor(std::log(radix-1)/std::log(2))+1;
+    /**
+     * @brief blockMask Masks maximum possible number to fit 'block'
+     */
+    //static const uint64_t blockMask = (1<<blockSize) - 1;
+    /**
+     * @brief cellCapacity Indicates how many digits of radix fit in a cell
+     */
+    //static const std::size_t cellCapacity = 64 / blockSize;
+    /**
+     * @brief whole Stores the whole part of the number in big endian
+     *
+     * Use of vector's native cells is naively maximized
+     * (leftover unused bits at top)
+     */
+    _number<radix-1> whole; // BIG_ENDIAN element ordering
+    /**
+     * @brief fractional Stores the fractional part of the number in little endian
+     */
+    _number<radix-1> fractional;  // LITTLE_ENDIAN element ordering
+    /**
+     * @brief isPositive indicates sign of the number
+     */
     bool isPositive;
+
+    /*static uint64_t get(const std::vector<uint64_t> & where,
+                        std::size_t blockIndex){
+        std::size_t cellIndex = blockIndex/cellCapacity;
+        uint64_t mask = blockMask<<(blockIndex%cellCapacity);
+        return (cellIndex<where.size())?mask*where[cellIndex]:0;
+    }
+
+    static void set(std::vector<uint64_t> & where,
+                    std::size_t blockIndex,
+                    uint64_t what){
+        std::size_t cellIndex = blockIndex/cellCapacity;
+        uint64_t mask = !(blockMask<<(blockIndex%cellCapacity));
+        what <<= blockIndex%cellCapacity;
+        if(cellIndex >= where.size()) where.resize(cellIndex+1,0);
+        (where[cellIndex] &= mask) |= what;
+    }*/
 
     /**
      * @brief Compares two numbers whithout taking sign into account
@@ -1104,40 +1250,40 @@ private:
      */
     int cmp_ignore_sig(const number &other) const{
         // skip possible leading zeroes - TO DO test if needed and remove if not
-        size_t pos = whole.find_last_not_of('0');
-        size_t other_pos = other.whole.find_last_not_of('0');
-        if(whole.npos == pos) pos=0;
-        if(other.whole.npos == other_pos) other_pos=0;
+        std::size_t pos = whole.size() - 1;
+        std::size_t other_pos = other.whole.size() - 1;
+        //if(whole.npos == pos) pos=0;
+        //if(other.whole.npos == other_pos) other_pos=0;
         if(pos != other_pos){
             return (pos > other_pos) ? 1 : -1;
         }else{
             while(pos > 0){
-                if(values[static_cast<int>(whole[pos])] != values[static_cast<int>(other.whole[pos])]){
-                    return (values[static_cast<int>(whole[pos])] > values[static_cast<int>(other.whole[pos])]) ? 1 : -1;
+                if(whole.get(pos) != other.whole.get(pos)){
+                    return (whole.get(pos) > other.whole.get(pos)) ? 1 : -1;
                 }
                 pos--;
             }
             // comparison of digits on 0th power
-            if(values[static_cast<int>(whole[pos])] != values[static_cast<int>(other.whole[pos])]){
-                return (values[static_cast<int>(whole[pos])] > values[static_cast<int>(other.whole[pos])]) ? 1 : -1;
+            if(whole.get(pos) != other.whole.get(pos)){
+                return (whole.get(pos) > other.whole.get(pos)) ? 1 : -1;
             }
             // fractional part must decide
-            size_t limit = (fractional.size() < other.fractional.size()) ? fractional.size() : other.fractional.size();
+            std::size_t limit = (fractional.size() < other.fractional.size()) ? fractional.size() : other.fractional.size();
             while(pos < limit){
-                if(values[static_cast<int>(fractional[pos])] != values[static_cast<int>(other.fractional[pos])]){
-                    return (values[static_cast<int>(fractional[pos])] > values[static_cast<int>(other.fractional[pos])]) ? 1 : -1;
+                if(fractional.get(pos) != other.fractional.get(pos)){
+                    return (fractional.get(pos) > other.fractional.get(pos)) ? 1 : -1;
                 }
                 pos++;
             }
             // comparing against implicit zeroes
             if(other.fractional.size() > limit){
                 for (;pos < other.fractional.size();pos++) {
-                    if (values[static_cast<int>(other.fractional[pos])] > 0) return -1;
+                    if (other.fractional.get(pos) > 0) return -1;
                 }
             }
             if(fractional.size() > limit){
                 for (;pos < fractional.size();pos++) {
-                    if (values[static_cast<int>(fractional[pos])] > 0) return 1;
+                    if (fractional.get(pos) > 0) return 1;
                 }
             }
             return 0;
@@ -1166,32 +1312,51 @@ private:
      * @param div whether division, or modulo shall be returned
      * @return Result of division if div is true and result of modulo otherwise
      */
-    number& div_or_mod(const number other,bool div){
-        std::string result;
+    number& div_or_mod(number other,bool div){
+        _number<radix-1> result;
         number divisor;
         number dividend;
 
         // shift so that handling is possible as whole numbers,
         // and account for possible new numbers of the modulo (nonzero scale)
-        dividend.fractional.assign(whole.rbegin(), whole.rend());
-        dividend.fractional.append(fractional);
+        std::size_t dividend_size = whole.size();
+        long long deviation = dividend_size - other.whole.size();
+        while(!whole.empty()){
+            dividend.fractional.push(whole.pop());
+        }
+        //dividend.fractional.assign(whole.rbegin(), whole.rend());
+        for(std::size_t i; i<fractional.size();++i){
+            dividend.fractional.push(fractional.get(i));
+        }
+        //dividend.fractional.append(fractional);
 
-        divisor.fractional.assign(other.whole.rbegin(), other.whole.rend());
-        size_t shift = 0;
+        while(!other.whole.empty()){
+            divisor.fractional.push(other.whole.pop());
+        }
+        //divisor.fractional.assign(other.whole.rbegin(), other.whole.rend());
+        std::size_t shift = other.fractional.size();
         if(divisor == 0){
-            shift = other.fractional.find_last_not_of(digits[0]);
+            for(std::size_t i = 0; i<other.fractional.size();++i){
+                if (other.fractional.get(i)!=0) shift = i;
+            }
+            //shift = other.fractional.find_last_not_of(digits[0]);
 
-            if (std::string::npos == shift) throw division_by_zero();
+            if(shift == other.fractional.size() ) throw division_by_zero();
 
-            divisor.fractional.assign(other.fractional.substr(shift));
+            for(std::size_t i = 0; i<shift;++i){
+                divisor.fractional.push(other.fractional.get(i));
+            }
+            //divisor.fractional.assign(other.fractional.substr(shift));
             // TO DO - investigate logical reason for ++shift;
             ++shift;
         }else{
-            divisor.fractional.append(other.fractional);
+            for(std::size_t i = 0; i < other.fractional.size(); ++i){
+                divisor.fractional.push(other.fractional.get(i));
+            }
+            //divisor.fractional.append(other.fractional);
         }
 
-        size_t dividend_size = whole.size();
-        long long deviation = dividend_size - other.whole.size();
+        whole.clear();
 
         // number of division steps
         int steps = deviation + scale + shift;
@@ -1209,27 +1374,52 @@ private:
                 tmp++;
                 dividend -= divisor;
             }
-            result.push_back(digits[tmp]);
-            divisor.fractional.insert(0, 1, digits[0]);
+            result.push(tmp);
+            // insert 0 to beginning
+            _number<radix-1> hlp(0,1);
+            for (std::size_t i=0;i<divisor.fractional.size();++i){
+                hlp.push(divisor.fractional.get(i));
+            }
+            divisor.fractional = std::move(hlp);
+            //divisor.fractional.insert(0, 1, digits[0]);
         }
         if(div){
             int move = result.size() - scale;
             if(move>0){
-                whole.assign(result.rbegin()+scale,result.rend());
                 fractional.clear();
-                fractional.append(result,move, std::string::npos);
+                for(std::size_t i=move;i<result.size();++i){
+                    fractional.push(result.get(i));
+                }
+                result.resize(move,0);
+                while(!result.empty()){
+                    whole.push(result.pop());
+                }
+                //whole.assign(result.rbegin()+scale,result.rend());
+                //fractional.clear();
+                //fractional.append(result,move, std::string::npos);
             }else{
-                fractional.append(-move,digits[0]);
-                fractional.append(result);
+                fractional.resize(fractional.size()-move,0);
+                for(std::size_t i=0; i<result.size();++i){
+                    fractional.push(result.get(i));
+                }
+                //fractional.append(result);
             }
 
             isPositive = (isPositive == other.isPositive);
         }else{
-            std::string tmp= dividend.fractional.substr(0,whole.size());
-            std::reverse(tmp.begin(),tmp.end());
-            whole = std::move(tmp);
-            fractional = dividend.fractional.substr(whole.size());
-            scale = 0;
+            fractional.clear();
+            for(std::size_t i=dividend_size;i<dividend.fractional.size();++i){
+                fractional.push(dividend.fractional.get(i));
+            }
+            dividend.fractional.resize(dividend_size,0);
+            while(!dividend.fractional.empty()){
+                whole.push(dividend.fractional.pop());
+            }
+            //std::string tmp= dividend.fractional.substr(0,whole.size());
+            //std::reverse(tmp.begin(),tmp.end());
+            //whole = std::move(tmp);
+            //fractional = dividend.fractional.substr(whole.size());
+            //scale = 0;
         }
         strip_zeroes();
         return *this;
@@ -1241,72 +1431,56 @@ private:
      * If value of whole part is equal to 0, then strips all but the last
      * leading 0 digit, otherwise strips all leading zeroes.
      *
-     * Always truncates any trailing zeroes.
-     *
-     * If only one digit stays, that is a singular 0 in whole,
-     * also sets isPositive to true, so we are consistent with sign of zero.
+     * If all digits are zero, sets isPositive to true,
+     * so we are consistent with sign of zero.
      */
     void strip_zeroes(){
-        std::size_t pos;
         bool isZero;
-        if((pos=whole.find_last_not_of(digits[0])) != whole.npos){
-            whole.resize(pos+1,digits[0]);
-            isZero = false;
+        //if((pos=whole.find_last_not_of(digits[0])) != whole.npos){
+        while(whole.size() > 1 && whole.back() == 0){
+            whole.pop();
         }
-        else{
-            whole.resize(1,digits[0]);
+        if (whole.back() == 0){
             isZero = true;
         }
+        else{
+            isZero = false;
+        }
         // leading zeroes stripped
-        if ((pos=fractional.find_last_not_of(digits[0])) == fractional.npos){
-            fractional.clear();
-            // isZero stays as is true && isZero always evals as true
-        }
-        else {
-            fractional.resize(pos+1,digits[0]);
-            isZero = false; // false && isZero always evals as false
-        }
+        isZero = isZero && (fractional.all_of(0));
         if (isZero) isPositive = true; // 0 is treated as positive
-        // trailing zeroes truncated
     }
 
     /**
-     * @brief Converts strings of whole and decimal parts
+     * @brief Converts whole and decimal parts between radices
      * <p>
-     * Conversion of string a to string b is achieved by utilizing
+     * Conversion from radix A to radix B is achieved by utilizing
      * the muladd_vector_uint_uint method for the whole part.
-     * For the whole part this method merely handles
-     * digit -> value and value -> digit conversion and related tasks.
+     * For the whole part this method merely walks through the .
      * For the decimal part this function also performs minor tasks related to
      * conversion
      * <p>
-     * @param srcWhole   Source string to convert - whole part as BIG ENDIAN
-     * @param srcDec     Source string to convert - decimal part as LITTLE ENDIAN
-     * @param rdx   Number base (radix) of source string
-     * @param scale Number of decimal places to compute
+     * @param srcWhole   Source number to convert - whole part as BIG ENDIAN
+     * @param srcDec     Source number to convert - decimal part as LITTLE ENDIAN
+     * @param rdx   Number base (radix) of source number
+     * @param size  Number of decimal places to compute
      * @return  Pair of holding converted number representation
      */
-    static std::pair<std::string, std::string> convert_with_vector(
-            const std::string & srcWhole,
-            const std::string & srcDec,
+    static std::pair<std::vector<uint8_t>, std::vector<uint8_t>> convert_with_vector(
+            const std::vector<uint8_t> & srcWhole,
+            const std::vector<uint8_t> & srcDec,
             unsigned int rdx,
-            unsigned int scale){
-        std::vector<unsigned int> vec;
+            unsigned int size){
+        std::vector<uint8_t> retValWhole;
         for(auto x=srcWhole.crbegin(); x!=srcWhole.crend();++x){
-            muladd_vector_uint_uint(vec,rdx,values[static_cast<int>(*x)]);
+            muladd_vector_uint_uint(retValWhole,rdx,*x);
         }
-        std::string retValWhole;
-        for (auto x : vec){
-            retValWhole.push_back(digits[x]);
-        }
-        std::string retValDec;
-        vec.clear();
-        for(auto x=srcDec.crbegin(); x!=srcDec.crend();++x){
-            vec.push_back(values[static_cast<int>(*x)]);
-        }
+        std::vector<uint8_t> retValDec,vec;
+        std::copy(srcDec.crbegin(),srcDec.crend(),std::back_inserter(vec));
         std::size_t orig_size = vec.size();
+        retValDec.reserve(size);
         unsigned int digitConverter = 0;
-        for(std::size_t i=0;i<scale;++i){
+        for(std::size_t i=0;i<size;++i){
             muladd_vector_uint_uint(vec,radix,0,rdx);
             digitConverter = 0;
             while(vec.size() > orig_size){
@@ -1315,7 +1489,7 @@ private:
                 digitConverter += vec.back();
                 vec.pop_back();
             }
-            retValDec.push_back(digits[digitConverter]);
+            retValDec.push_back(digitConverter);
         }
         return make_pair(retValWhole, retValDec);
     }
@@ -1333,14 +1507,14 @@ private:
      * @param add   The number to add to the vector
      */
     static void muladd_vector_uint_uint(
-            std::vector<unsigned int> & vec,
+            std::vector<uint8_t> & vec,
             unsigned int mul,
             unsigned int add,
             unsigned int max_element = radix){
         unsigned int carry = 0;
         // multiply:
         for(auto x = vec.begin(); x != vec.end(); ++x){
-            carry += (*x)*mul;
+            carry += mul*(*x);
             *x = carry % max_element; // lower half
             carry /= max_element; // upper half
         }
@@ -1355,10 +1529,10 @@ private:
             *x = carry % max_element;
             carry /= max_element;
         }
-        while (carry!=0) {
+        do {
             vec.push_back(carry % max_element);
             carry /= max_element;
-        }
+        } while (carry!=0);
     }
 
 };

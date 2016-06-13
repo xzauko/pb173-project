@@ -5,11 +5,7 @@
  * @brief Single include implementation of fixedpoint arithmetic library.
  */
 // TO DO list:
-// Fix multiplication
-// Implement long division for div_or_mod
 // Implement general power calculations
-// Implement a more memory friendly _number struct
-
 
 //          Copyright Michal Pochobradský 2016.
 //          Copyright Tibor Zauko 2016.
@@ -36,93 +32,6 @@
 #endif
 
 namespace fixedpoint{
-/**
- * @brief The _number struct stores the values of the number's whole and fractional part
- */
-template<unsigned char max_digit_value>
-struct _number{
-
-    _number(){}
-
-    _number(std::size_t newSize, int value){
-        _data.resize(newSize,value);
-    }
-
-    _number(const _number &) = default;
-    _number(_number &&) = default;
-    _number & operator=(const _number &) = default;
-    _number & operator=(_number &&) = default;
-
-    /**
-     * @brief get returns a digit of the stored number
-     * @param index determines which digit is returned
-     * @return value of the requested digit, 0 if nonexistent
-     */
-    int get(std::size_t index) const{
-        return (index<_data.size()?_data[index]:0);
-    }
-    /**
-     * @brief set sets a digit of number to value
-     *
-     * If specified digit does not exist, it creates a place for it
-     *
-     * @param index determines which digit to set
-     * @param what  what value to set the choosen digit
-     */
-    void set(std::size_t index, int what){
-        if(index >= _data.size()) {
-            _data.resize(index,0);
-            _data.push_back(what);
-        }
-        else{
-            _data[index] = what;
-        }
-    }
-
-    std::size_t size() const{
-        return _data.size();
-    }
-    void resize(std::size_t newSize, int def_value){
-        _data.resize(newSize,def_value);
-    }
-    void clear(){
-        _data.clear();
-    }
-
-    bool empty() const{
-        return _data.empty();
-    }
-    bool all_of(int value) const{
-        return std::all_of(_data.cbegin(),
-                           _data.cend(),
-                           [value](const int x){
-            return x==value;
-        });
-    }
-
-    void push(int value){
-        _data.push_back(value);
-    }
-
-    int pop(){
-        int rval = _data.back();
-        _data.pop_back();
-        return rval;
-    }
-
-    int back() const{
-        return _data.back();
-    }
-    //int front() const;
-
-    void swap(_number & o){
-        _data.swap(o._data);
-    }
-
-private:
-    // _data;
-    std::vector<uint8_t> _data;
-};
 
 #if defined( FIXEDPOINT_CASE_INSENSITIVE ) && ! defined( FIXEDPOINT_CASE_SENSITIVE )
 #define MAX_RADIX (36)
@@ -295,10 +204,300 @@ struct unsupported_operation: public std::runtime_error{
  * results in an exception, use @code myVar1 = myVar1 * myVar1; @endcode
  * or @code myVar1.pow(2); //implicitly converts 2 to same type as myVar1 @endcode
  * instead.</li>
+ * <li>Use c++14 for compilation.</li>
  * </ol>
  */
 template<unsigned char radix>
 struct number{
+private:
+
+    /**
+     * @brief The _number struct stores the values of the number's whole and fractional part
+     */
+    struct _number{
+    private:
+        static constexpr unsigned int minBits(){
+            unsigned int x = 2,s = 1;
+            while(x<radix){
+                x<<=1;
+                ++s;
+            }
+            return s;
+        }
+
+        /**
+         * @brief The _item struct is an element of the vector used for data storage
+         */
+        template<unsigned bitsize>
+        struct _item{
+            uint16_t b0:bitsize,
+                       b1:bitsize,
+                       b2:bitsize,
+                       b3:bitsize,
+                       b4:bitsize,
+                       b5:bitsize,
+                       b6:bitsize,
+                       b7:bitsize;
+
+            _item(int d_val = 0):
+                b0(d_val),b1(d_val),b2(d_val),b3(d_val),
+                b4(d_val),b5(d_val),b6(d_val),b7(d_val){}
+
+            bool operator==(const _item & o) const{
+                return (b0==o.b0 &&
+                        b1==o.b1 &&
+                        b2==o.b2 &&
+                        b3==o.b3 &&
+                        b4==o.b4 &&
+                        b5==o.b5 &&
+                        b6==o.b6 &&
+                        b7==o.b7);
+            }
+
+        };
+
+        using vecitem = _item<minBits()>;
+    public:
+        _number():
+            realSize(0)
+        {}
+
+        _number(std::size_t newSize, int value):
+            realSize(0)
+        {
+            resize(newSize,value);
+        }
+
+        _number(const _number &) = default;
+        _number(_number &&) = default;
+        _number & operator=(const _number &) = default;
+        _number & operator=(_number &&) = default;
+
+        /**
+         * @brief get returns a digit of the stored number
+         * @param index determines which digit is returned
+         * @return value of the requested digit, 0 if nonexistent
+         */
+        int get(std::size_t index) const{
+            if(index>=realSize) return 0;
+            else{
+                auto ref = _data.at(index/8);
+                int rval;
+                switch(index%8){
+                case 0:
+                    rval = ref.b0;
+                    break;
+                case 1:
+                    rval = ref.b1;
+                    break;
+                case 2:
+                    rval = ref.b2;
+                    break;
+                case 3:
+                    rval = ref.b3;
+                    break;
+                case 4:
+                    rval = ref.b4;
+                    break;
+                case 5:
+                    rval = ref.b5;
+                    break;
+                case 6:
+                    rval = ref.b6;
+                    break;
+                case 7:
+                    rval = ref.b7;
+                    break;
+                };
+                return rval;
+            }
+        }
+
+        /**
+         * @brief set sets a digit of number to value
+         *
+         * If specified digit does not exist, it creates a place for it
+         *
+         * @param index determines which digit to set
+         * @param what  what value to set the choosen digit
+         */
+        void set(std::size_t index, int value){
+            if(index>=realSize){
+                resize(index+1,0);
+            }
+            // explicit type for ref - auto makes it const_reference
+            typename std::vector<vecitem>::reference ref = _data.at(index/8);
+            switch(index%8){
+            case 0:
+                ref.b0 = value;
+                break;
+            case 1:
+                ref.b1 = value;
+                break;
+            case 2:
+                ref.b2 = value;
+                break;
+            case 3:
+                ref.b3 = value;
+                break;
+            case 4:
+                ref.b4 = value;
+                break;
+            case 5:
+                ref.b5 = value;
+                break;
+            case 6:
+                ref.b6 = value;
+                break;
+            case 7:
+                ref.b7 = value;
+                break;
+            };
+        }
+
+        /**
+         * @brief size Returns the size of stored _number
+         */
+        std::size_t size() const{
+            return realSize;
+        }
+
+        /**
+         * @brief resize Adjusts the size of stored _number
+         * @param newSize   Targeted size
+         * @param def_value Value to initialize new members with
+         */
+        void resize(std::size_t newSize, int def_value){
+            vecitem a(def_value);
+            std::size_t rnsize = newSize/8, roEnd = (_data.size()>0)?_data.size()-1:0;
+            if(newSize%8!=0) ++rnsize;
+            _data.resize(rnsize,a);
+            // explicit type for ref - auto makes it const_reference
+            if(newSize>realSize){
+                typename std::vector<vecitem>::reference ref = _data.at(roEnd);
+                switch(realSize%8){
+                case 1:
+                    ref.b1 = def_value;
+                case 2:
+                    ref.b2 = def_value;
+                case 3:
+                    ref.b3 = def_value;
+                case 4:
+                    ref.b4 = def_value;
+                case 5:
+                    ref.b5 = def_value;
+                case 6:
+                    ref.b6 = def_value;
+                case 7:
+                    ref.b7 = def_value;
+                    break;
+                case 0:
+                    break;
+                }
+            }
+            realSize = newSize;
+        }
+
+        /**
+         * @brief clear Removes all stored data
+         */
+        void clear(){
+            _data.clear();
+            realSize = 0;
+        }
+
+        /**
+         * @brief empty Test emptyness of _number
+         * @return true if empty, false otherwise
+         */
+        bool empty() const{
+            return _data.empty();
+        }
+
+        /**
+         * @brief all_of Behaves like std::all_of over the whole data set
+         * @param value Comparison value for elements
+         * @return true if all elements are equal to value, false otherwise
+         */
+        bool all_of(int value) const{
+            bool retVal = true;
+            if(_data.size()>=1){
+                vecitem cmpval(value);
+                retVal = std::all_of(_data.cbegin(),
+                                     _data.cend()-1,
+                                     [&cmpval](const vecitem & x){
+                    return x==cmpval;
+                });
+                auto ref = _data.back();
+                switch(realSize%8){
+                case 0:
+                    retVal = retVal && ref.b7==value;
+                case 7:
+                    retVal = retVal && ref.b6==value;
+                case 6:
+                    retVal = retVal && ref.b5==value;
+                case 5:
+                    retVal = retVal && ref.b4==value;
+                case 4:
+                    retVal = retVal && ref.b3==value;
+                case 3:
+                    retVal = retVal && ref.b2==value;
+                case 2:
+                    retVal = retVal && ref.b1==value;
+                case 1:
+                    retVal = retVal && ref.b0==value;
+                }
+            }
+            return retVal;
+        }
+
+        /**
+         * @brief push Store value to end of _number
+         * @param value what value to store
+         */
+        void push(int value){
+            set(realSize,value);
+
+        }
+
+        /**
+         * @brief pop Destructively read last value from _number
+         * @return Value of removed item
+         */
+        int pop(){
+            int rval = back();
+            if((--realSize)%8 == 0) _data.pop_back();
+            return rval;
+        }
+
+        /**
+         * @brief back Return value of last element
+         */
+        int back() const{
+            return get(realSize-1);
+        }
+
+        /**
+         * @brief swap Swaps contents of 2 _numbers
+         * @param o Othern _number to swap with
+         */
+        void swap(_number & o){
+            _data.swap(o._data);
+            std::swap(realSize,o.realSize);
+        }
+    private:
+        /**
+         * @brief _data holds the actual data
+         */
+        std::vector<vecitem> _data;
+        /**
+         * @brief realSize number of stored values
+         *
+         * Allocated size always rounds to closest higher (or equal) multiply of 8.
+         */
+        std::size_t realSize;
+    };
+public:
 
     /**
      * @brief To what number of fractional places to perform division.
@@ -680,53 +879,48 @@ struct number{
         else{
             // representing numbers as fraxtions x/y, where y has format of
             // 1000...0 (number of fractional places zeroes)
-            size_t decimals = std::max(fractional.size(), other.fractional.size());
+            //size_t decimals = std::max(fractional.size(), other.fractional.size());
             // expected maximum size of product
-            size_t size = (decimals + whole.size()) +
-                    (decimals + other.whole.size());
+            std::size_t size = (fractional.size() + whole.size()) +
+                    (other.fractional.size() + other.whole.size());
             // size of fractional part (precision)
-            size_t endfrac = std::max(fractional.size(), other.fractional.size());
+            std::size_t decimals = std::max(fractional.size(), other.fractional.size());
 
             const number a(*this);
             const number& b = other;
 
-            const size_t dec_point = 2 * (decimals);
+            const std::size_t dec_point = fractional.size()+other.fractional.size();
             fractional.clear();
             //fractional.resize(dec_point, digits[0] );
             whole.clear();
-            whole.resize(size, 0 );
+            whole.resize(size, 0);
 
-            auto product = [&dec_point, this](std::size_t i, int what) -> void{
+            auto product = [this, dec_point](std::size_t i, int what) -> void{
                 if(i < dec_point){
-                    i = dec_point - i -1;
-                    fractional.set(i,what);
+                    i = dec_point - i - 1;
+                    this->fractional.set(i,what);
                 }else{
                     i = i - dec_point;
-                    whole.set(i,what);
+                    this->whole.set(i,what);
                 }
             };
-            auto get = [&decimals](const number &from,size_t i) -> int{
-                if(i <decimals){
-                    i = decimals - i -1;
-                    if(i < from.fractional.size()) return from.fractional.get(i);
-                    // implicit zeroes
-                    else return 0;
+            auto get = [](const number &from, std::size_t i) -> int{
+                if(i < from.fractional.size()){
+                    i = from.fractional.size() - i - 1;
+                    return from.fractional.get(i);
                 }else{
-                    i = i - decimals;
-                    if(i < from.whole.size()) return from.whole.get(i);
-                    // implicit zeroes
-                    else return 0;
-
+                    i = i - from.fractional.size();
+                    return from.whole.get(i);
                 }
             };
 
-            const size_t p = b.whole.size() + decimals;
-            const size_t q = a.whole.size() + decimals;
-            for(size_t b_i = 0; b_i < p; b_i++){
-                unsigned char carry= 0;
-                for(size_t a_i = 0; a_i < q; a_i++){
-                    unsigned long tmp = get(*this,a_i + b_i);
-                    tmp += carry + get(a, a_i ) * get(b, b_i);
+            const std::size_t p = b.whole.size() + b.fractional.size();
+            const std::size_t q = a.whole.size() + a.fractional.size();
+            for(std::size_t b_i = 0; b_i < p; b_i++){
+                unsigned char carry = 0;
+                for(std::size_t a_i = 0; a_i < q; a_i++){
+                    unsigned long tmp = get(*this, a_i + b_i);
+                    tmp += carry + get(a, a_i) * get(b, b_i);
                     carry = tmp / radix;
                     product(a_i + b_i, tmp % radix);
                 }
@@ -734,11 +928,7 @@ struct number{
                 tmp += carry;
                 product(b_i + q, tmp);
             }
-            //size_t pos = whole.find_last_not_of(digits[0]);
-            //if(pos != whole.npos) pos += 1;
-            //else pos = 1;
-            //whole.resize(pos, 0);
-            fractional.resize(endfrac, 0);
+            fractional.resize(decimals, 0);
         }
         strip_zeroes();
         return *this;
@@ -841,7 +1031,6 @@ struct number{
             std::size_t scalebak = scale;
             scale = 0; // we need wholepart division for next part
             while(expCopy > one){
-
                 if(expCopy%two == one) others *= (*this);
                 help = (*this);
                 operator*=(help);
@@ -1216,11 +1405,11 @@ private:
      * Use of vector's native cells is naively maximized
      * (leftover unused bits at top)
      */
-    _number<radix-1> whole; // BIG_ENDIAN element ordering
+    _number whole; // BIG_ENDIAN element ordering
     /**
      * @brief fractional Stores the fractional part of the number in little endian
      */
-    _number<radix-1> fractional;  // LITTLE_ENDIAN element ordering
+    _number fractional;  // LITTLE_ENDIAN element ordering
     /**
      * @brief isPositive indicates sign of the number
      */
@@ -1312,114 +1501,324 @@ private:
      * @param div whether division, or modulo shall be returned
      * @return Result of division if div is true and result of modulo otherwise
      */
-    number& div_or_mod(number other,bool div){
-        _number<radix-1> result;
-        number divisor;
-        number dividend;
-
-        // shift so that handling is possible as whole numbers,
-        // and account for possible new numbers of the modulo (nonzero scale)
-        std::size_t dividend_size = whole.size();
-        long long deviation = dividend_size - other.whole.size();
-        while(!whole.empty()){
-            dividend.fractional.push(whole.pop());
+    number& div_or_mod(const number& other,bool div){
+        if(other == number()){
+            throw(division_by_zero());
         }
-        //dividend.fractional.assign(whole.rbegin(), whole.rend());
-        for(std::size_t i; i<fractional.size();++i){
-            dividend.fractional.push(fractional.get(i));
-        }
-        //dividend.fractional.append(fractional);
-
-        while(!other.whole.empty()){
-            divisor.fractional.push(other.whole.pop());
-        }
-        //divisor.fractional.assign(other.whole.rbegin(), other.whole.rend());
-        std::size_t shift = other.fractional.size();
-        if(divisor == 0){
-            for(std::size_t i = 0; i<other.fractional.size();++i){
-                if (other.fractional.get(i)!=0) shift = i;
+        // Multiplies _number by scalar (unsigned) (little endian)
+        // unify with muladd_vector_uint_uint ?
+        auto muls_le =
+                [](const _number & m1, unsigned int m2) -> _number{
+            unsigned carry = 0;
+            _number result;
+            result.resize(m1.size(),0);
+            std::size_t i;
+            for(i = 0; i<m1.size(); ++i){
+                carry += m2*m1.get(i);
+                result.set(i,carry%radix);
+                carry /= radix;
             }
-            //shift = other.fractional.find_last_not_of(digits[0]);
-
-            if(shift == other.fractional.size() ) throw division_by_zero();
-
-            for(std::size_t i = 0; i<shift;++i){
-                divisor.fractional.push(other.fractional.get(i));
+            while(carry>0){
+                result.push(carry%radix);
+                carry /= radix;
             }
-            //divisor.fractional.assign(other.fractional.substr(shift));
-            // TO DO - investigate logical reason for ++shift;
-            ++shift;
-        }else{
-            for(std::size_t i = 0; i < other.fractional.size(); ++i){
-                divisor.fractional.push(other.fractional.get(i));
-            }
-            //divisor.fractional.append(other.fractional);
-        }
+            return result;
+        };
 
-        whole.clear();
-
-        // number of division steps
-        int steps = deviation + scale + shift;
-
-        if (steps < 0){
-            // divisor is bigger by order(s) of magnitude,
-            // the whole dividend is the modulo
-            if(div) *this = 0;
-            return *this;
-        }
-
-        for(int i = 0; i <= steps;i++){
-            size_t tmp=0;
-            while(dividend.cmp_ignore_sig(divisor) >= 0){
-                tmp++;
-                dividend -= divisor;
-            }
-            result.push(tmp);
-            // insert 0 to beginning
-            _number<radix-1> hlp(0,1);
-            for (std::size_t i=0;i<divisor.fractional.size();++i){
-                hlp.push(divisor.fractional.get(i));
-            }
-            divisor.fractional = std::move(hlp);
-            //divisor.fractional.insert(0, 1, digits[0]);
-        }
-        if(div){
-            int move = result.size() - scale;
-            if(move>0){
-                fractional.clear();
-                for(std::size_t i=move;i<result.size();++i){
-                    fractional.push(result.get(i));
+        // Less-or-equal comparison of little endian _numbers
+        auto lt_le =
+                [](const _number & n1, const _number & n2) -> bool{
+            std::size_t i = std::max(n1.size(),n2.size());
+            int a,b;
+            for(; i>0; --i){
+                if((a=n1.get(i-1))!=(b=n2.get(i-1))){
+                    return a<b;
                 }
-                result.resize(move,0);
-                while(!result.empty()){
-                    whole.push(result.pop());
+            }
+            return false;
+        };
+
+        // Subtracts 2 _numbers, returns borrow (modifies 1st operand)
+        auto subref_le =
+                [](_number& a, const _number& b) -> int{
+            int borrow = 0,tmp;
+            std::size_t i= 0;
+            for(;i<b.size();++i){
+                tmp = a.get(i) - b.get(i) - borrow;
+                borrow = 0;
+                while(tmp < 0){
+                    tmp += radix;
+                    ++borrow;
                 }
-                //whole.assign(result.rbegin()+scale,result.rend());
-                //fractional.clear();
-                //fractional.append(result,move, std::string::npos);
-            }else{
-                fractional.resize(fractional.size()-move,0);
-                for(std::size_t i=0; i<result.size();++i){
-                    fractional.push(result.get(i));
+                a.set(i,tmp);
+            }
+            for(;i<a.size();++i){
+                if(borrow == 0) return 0;
+                tmp = a.get(i) - borrow;
+                borrow = 0;
+                while(tmp < 0){
+                    tmp += radix;
+                    ++borrow;
                 }
-                //fractional.append(result);
+                a.set(i,tmp);
+            }
+            return borrow;
+        };
+
+        // Adds 2 _numbers, ignores last carry, if any
+        auto addref_ic_le =
+                [](_number& a, const _number& b) -> void{
+            int carry = 0;
+            std::size_t i = 0;
+            for(;i<b.size();++i){
+                carry += a.get(i) + b.get(i);
+                a.set(i,carry%radix);
+                carry /= radix;
+            }
+            for(;i<a.size();++i){
+                if(carry == 0) return;
+                carry += a.get(i);
+                a.set(i,carry%radix);
+                carry /= radix;
+            }
+        };
+
+        // shifts _number to the right (arithmetic shift in base radix)
+        auto shift_append_le =
+                [](const _number cp, unsigned int shft) -> _number{
+            _number rv;
+            rv.resize(cp.size()+shft,0);
+            for(std::size_t i=0; i<cp.size(); ++i){
+                rv.set(i+shft,cp.get(i));
+            }
+            return rv;
+        };
+
+        std::size_t u_fs = fractional.size(), v_fs = other.fractional.size();
+        // get real end of fractional part
+        while(u_fs > 0 && fractional.get(--u_fs)==0);
+        while(v_fs > 0 && other.fractional.get(--v_fs)==0);
+        if(u_fs>0 || fractional.get(u_fs)!=0) ++u_fs;
+        if(v_fs>0 || other.fractional.get(v_fs)!=0) ++v_fs;
+        std::size_t shift = std::max(u_fs,v_fs);
+
+        // Algo from Knuth vol. 2 - "long division"
+        _number u, v; // all little endian
+        std::size_t cp_i;
+        // u - dividend, v - divisor
+        u.resize(scale,0);
+        cp_i = shift;
+        for(; cp_i>0;--cp_i){
+            u.push(fractional.get(cp_i-1));
+            v.push(other.fractional.get(cp_i-1));
+        }
+        if(whole.size()>1 || whole.get(0)!=0){
+            for(cp_i = 0; cp_i<whole.size(); ++cp_i){
+                u.push(whole.get(cp_i));
+            }
+        }
+        if(other.whole.size()>1 || other.whole.get(0)!=0){
+            for(cp_i = 0; cp_i<other.whole.size(); ++cp_i){
+                v.push(other.whole.get(cp_i));
+            }
+        }
+
+        // Dividend is less than divisor after alignment
+        if(lt_le(u,v)){
+            if (div){
+                operator=(number(0));
+                isPositive = true;
+            }
+        }
+
+        else{
+            std::size_t m,n;
+            int cq,borrow;
+            // cq - candidate quotient in given step
+            _number q, shiftedv,tmp;
+            // q - quotient
+            n = v.size();
+            m = u.size() - n;
+            // 1. Normalize
+            unsigned int d = radix/(v.back()+1);
+            u = muls_le(u,d);
+            v = muls_le(v,d);
+            if(u.size()==m+n) u.push(0);
+            const int v0 = v.back(); // MSD of divisor
+            // 2. Initialize j, 7. Loop on j
+            for(std::size_t j = m+1; j>0; --j){
+
+                // 3. Calculate ^q
+                if(u.get(n+j-1)==v0){
+                    cq = radix-1;
+                }
+                else{
+                    cq = (radix*u.get(n+j-1)+u.get(n+j-2))/v0;
+                }
+                // 3.-4. Check if cq isn't too big(3) and multiply(4)
+                shiftedv = shift_append_le(v,j-1);
+                if(lt_le(u, (tmp=muls_le(shiftedv,cq)))){
+                    --cq;
+                    //tmp = muls_le(shiftedv,cq);
+                    subref_le(tmp,shiftedv);
+                }
+                // 4. Sub
+                borrow = subref_le(u,tmp);
+
+                // 5. Test remainder
+                if (borrow > 0){
+
+                    // 6. Add back
+                    --cq;
+                    addref_ic_le(u,shiftedv);
+                }
+                q.set(j-1,cq);
             }
 
-            isPositive = (isPositive == other.isPositive);
-        }else{
+            // 8. Unnormalize
+            whole.clear();
             fractional.clear();
-            for(std::size_t i=dividend_size;i<dividend.fractional.size();++i){
-                fractional.push(dividend.fractional.get(i));
+            if (div){
+                isPositive = isPositive==other.isPositive;
+                std::size_t q_i;
+                q_i = q.size();
+                for(; q_i>scale; --q_i){
+                    whole.set(q_i-scale-1,q.get(q_i-1));
+                }
+                if(whole.size()==0) whole.push(0);
+                for(; q_i>0; --q_i){
+                    fractional.push(q.get(q_i-1));
+                }
             }
-            dividend.fractional.resize(dividend_size,0);
-            while(!dividend.fractional.empty()){
-                whole.push(dividend.fractional.pop());
+            else{
+                // unnormalize must divide remainder of u by d (one digit integer division):
+                std::size_t r_i = u.size();
+                int carry = 0;
+                for(;r_i>0;--r_i){
+                    carry += u.get(r_i-1);
+                    u.set(r_i-1,carry/d);
+                    carry %= d;
+                    carry *= radix;
+                }
+                for(r_i = u.size(); r_i > shift+scale; --r_i){
+                    whole.set(r_i-scale-shift-1,u.get(r_i-1));
+                }
+                if(whole.size()==0) whole.push(0);
+                for(; r_i > 0; --r_i){
+                    fractional.push(u.get(r_i-1));
+                }
             }
-            //std::string tmp= dividend.fractional.substr(0,whole.size());
-            //std::reverse(tmp.begin(),tmp.end());
-            //whole = std::move(tmp);
-            //fractional = dividend.fractional.substr(whole.size());
-            //scale = 0;
+
+            /*
+            _number result;
+            number divisor;
+            number dividend;
+
+            std::size_t dividend_size = whole.size();
+            long long deviation = dividend_size - other.whole.size();
+
+            // shift so that handling is possible as whole numbers,
+            // and account for possible new numbers of the modulo (nonzero scale)
+            while(!whole.empty()){
+                dividend.fractional.push(whole.pop());
+            }
+            for(std::size_t i=0; i<fractional.size();++i){
+                dividend.fractional.push(fractional.get(i));
+            }
+            //dividend.fractional.append(fractional);
+
+            while(!other.whole.empty()){
+                divisor.fractional.push(other.whole.pop());
+            }
+            //divisor.fractional.assign(other.whole.rbegin(), other.whole.rend());
+            std::size_t shift = other.fractional.size();
+            if(divisor == 0){
+                for(std::size_t i = 0; i<other.fractional.size();++i){
+                    if (other.fractional.get(i)!=0) shift = i;
+                }
+                //shift = other.fractional.find_last_not_of(digits[0]);
+
+                if(shift == other.fractional.size() ) throw division_by_zero();
+
+                for(std::size_t i = 0; i<shift;++i){
+                    divisor.fractional.push(other.fractional.get(i));
+                }
+                //divisor.fractional.assign(other.fractional.substr(shift));
+                // TO DO - investigate logical reason for ++shift;
+                ++shift;
+            }else{
+                for(std::size_t i = 0; i < other.fractional.size(); ++i){
+                    divisor.fractional.push(other.fractional.get(i));
+                }
+                //divisor.fractional.append(other.fractional);
+            }
+
+            whole.clear();
+
+            // number of division steps
+            int steps = deviation + scale + shift;
+
+            if (steps < 0){
+                // divisor is bigger by order(s) of magnitude,
+                // the whole dividend is the modulo
+                if(div) *this = 0;
+                return *this;
+            }
+
+            for(int i = 0; i <= steps;i++){
+                size_t tmp=0;
+                while(dividend.cmp_ignore_sig(divisor) >= 0){
+                    tmp++;
+                    dividend -= divisor;
+                }
+                result.push(tmp);
+                // insert 0 to beginning
+                _number hlp(0,1);
+                for (std::size_t i=0;i<divisor.fractional.size();++i){
+                    hlp.push(divisor.fractional.get(i));
+                }
+                divisor.fractional = std::move(hlp);
+                //divisor.fractional.insert(0, 1, digits[0]);
+            }
+            if(div){
+                int move = result.size() - scale;
+                if(move>0){
+                    fractional.clear();
+                    for(std::size_t i=move;i<result.size();++i){
+                        fractional.push(result.get(i));
+                    }
+                    result.resize(move,0);
+                    while(!result.empty()){
+                        whole.push(result.pop());
+                    }
+                    //whole.assign(result.rbegin()+scale,result.rend());
+                    //fractional.clear();
+                    //fractional.append(result,move, std::string::npos);
+                }else{
+                    fractional.resize(fractional.size()-move,0);
+                    for(std::size_t i=0; i<result.size();++i){
+                        fractional.push(result.get(i));
+                    }
+                    //fractional.append(result);
+                }
+
+                isPositive = (isPositive == other.isPositive);
+            }else{
+                fractional.clear();
+                for(std::size_t i=dividend_size;i<dividend.fractional.size();++i){
+                    fractional.push(dividend.fractional.get(i));
+                }
+                dividend.fractional.resize(dividend_size,0);
+                while(!dividend.fractional.empty()){
+                    whole.push(dividend.fractional.pop());
+                }
+                //std::string tmp= dividend.fractional.substr(0,whole.size());
+                //std::reverse(tmp.begin(),tmp.end());
+                //whole = std::move(tmp);
+                //fractional = dividend.fractional.substr(whole.size());
+                //scale = 0;
+            }
+            */
         }
         strip_zeroes();
         return *this;

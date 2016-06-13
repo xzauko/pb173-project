@@ -114,13 +114,13 @@ TEST_CASE("Division by zero"){
 }
 
 TEST_CASE("Unsupported operations"){
-    decimal a(125),b("0.125");
+    decimal a(-125),b("0.125");
     bool correctExc=false;
     try{
        std::pow(a,b);
     }
     catch(unsupported_operation & e){
-        if( e.what() == "Only integer exponent is suported for power function!"s ){
+        if( e.what() == "non-integer power of a negative number"s ){
             correctExc = true;
         }
         else correctExc = false;

@@ -998,15 +998,28 @@ public:
 
     /**
      * @brief Calculates exponent-th power of number
+     *
+     * When using real non-integer exponents, negative base is prohibited
+     * (raises exception).
+     *
+     * For real exponents adjusting scale changes precision
+     * (division is used in calculation). Parameter precision specifies,
+     * how many elements of the binomial series (starting from the first)
+     * should be considered for calculation/approximation of the result.
+     * Default behavior is to take the first 100 elements,
+     * and to not alter the scale.
+     *
+     * Please note: With scale and precision both at 100,
+     * the execution takes a long time (~seconds).
+     *
      * @param exponent  which power to calculate
      * @param precision represents the number of iterations to take when approximating result
      * @return Reference to *this
-     * @throw unsupported_operation when attemted to power with fractional number
+     * @throw unsupported_operation when attemted to power negative number with fractional number
      */
-    number& pow(const number & exponent, const number & precision = number(50)){
+    number& pow(const number & exponent, const number & precision = number(100)){
         // fractional part check - TO DO - implement
         if(! exponent.fractional.all_of(0)){
-            throw unsupported_operation("Only integer exponent is suported for power function!");
             real_pow(exponent, precision);
         }
         else{
@@ -1508,18 +1521,21 @@ private:
         if(!isPositive){
             throw(unsupported_operation("non-integer power of a negative number"));
         }
-        number x,tmp;
+        number x,resRecipr,tmp;
         const number one(1);
         if(operator<(one)){
             x = one - (*this);
         }
         else{
-            x = -(((*this)-one)/(*this));
+            x = (((*this)-one)/(*this));
+            x.isPositive = !x.isPositive; // unary - operation not available
         }
         for (number k=0; k<precision;++k){
-            tmp+=(binomial(exponent,k)*std::pow(x,k));
+            tmp = x;
+            tmp.int_pow(k);
+            resRecipr+=(binomial(exponent,k)*tmp);
         }
-        operator=(one/tmp);
+        operator=(one/resRecipr);
     }
 
     /**

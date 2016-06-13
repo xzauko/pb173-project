@@ -4,6 +4,7 @@ Currently the maximal base is limited by
 
 The Makefile provided does not build any useful program. 
 The only reasonable target is `test`, which builds and runs various tests verifying the functionality of `include/fixedpoint.h`.
+This target is also the default.
 Test for constructors assumes the following about integral types: 
 * short is at least 16 bits
 * int and long are at least 32 bits

@@ -415,7 +415,7 @@ private:
         }
 
         /**
-         * @brief all_of Behaves like std::all_of over the whole data set
+         * @brief all_of Checks whether all elements are equal to a value
          * @param value Comparison value for elements
          * @return true if all elements are equal to value, false otherwise
          */
@@ -999,48 +999,41 @@ public:
     /**
      * @brief Calculates exponent-th power of number
      * @param exponent  which power to calculate
+     * @param precision represents the number of iterations to take when approximating result
      * @return Reference to *this
      * @throw unsupported_operation when attemted to power with fractional number
      */
-    number& pow(const number & exponent){
+    number& pow(const number & exponent, const number & precision = number(50)){
         // fractional part check - TO DO - implement
         if(! exponent.fractional.all_of(0)){
             throw unsupported_operation("Only integer exponent is suported for power function!");
-        }
-        // fast path for exponent 0
-        if(exponent.cmp_ignore_sig(number()) == 0){
-            operator=(number(1));
-        }
-        // fast path for powerbases 0 and (-)1
-        else if(cmp_ignore_sig(number())==0 || cmp_ignore_sig(number(1))==0){
-            if (! isPositive) { // 0 is treated as positive, therefore must be -1
-                isPositive = ((exponent%number(2)).cmp_ignore_sig(number())==0);
-            }
+            real_pow(exponent, precision);
         }
         else{
-            // negative exponent handling
-            number expCopy(exponent);
-            number others(1), help;
-            number one(1),two(2);
-            if(!expCopy.isPositive){
-                // convert the problem to positive power of inverse number
-                expCopy.isPositive = true;
-                (*this) = one/(*this);
-            }
-            // divide and conquer - halve the exponent in each pass
-            std::size_t scalebak = scale;
-            scale = 0; // we need wholepart division for next part
-            while(expCopy > one){
-                if(expCopy%two == one) others *= (*this);
-                help = (*this);
-                operator*=(help);
-                expCopy/=two;
-            }
-            scale = scalebak; // revert to original scale
-            operator*=(others);
+            int_pow(exponent);
         }
         strip_zeroes();
         return *this;
+    }
+
+    /**
+     * @brief binomial Calculates binomial coefficient ( n over k )
+     *
+     * You can affect the precision of this calculation by changing scale
+     *
+     * @param n The first input for the binomial
+     * @param k The second input for the binomial
+     * @return Result of the calculation
+     */
+    static number binomial(const number& n, const number & k){
+        if(!k.fractional.all_of(0)){
+            throw(unsupported_operation("Second parameter of binomial must be an integer"));
+        }
+        number result(1);
+        for(number i=1;i<=k;++i){
+            result *= (n+1-i)/i;
+        }
+        return result;
     }
 
     /**
@@ -1073,10 +1066,13 @@ public:
 
     /**
      * @brief Truncates the number
+     * @param fractionals Number of fractional places to leave
      * @return Reference to *this
      */
-    number& trunc(){
-        fractional.clear();
+    number& trunc(std::size_t fractionals = 0){
+        if(fractionals<fractional.size()){
+            fractional.resize(fractionals,0);
+        }
         return *this;
     }
 
@@ -1415,23 +1411,6 @@ private:
      */
     bool isPositive;
 
-    /*static uint64_t get(const std::vector<uint64_t> & where,
-                        std::size_t blockIndex){
-        std::size_t cellIndex = blockIndex/cellCapacity;
-        uint64_t mask = blockMask<<(blockIndex%cellCapacity);
-        return (cellIndex<where.size())?mask*where[cellIndex]:0;
-    }
-
-    static void set(std::vector<uint64_t> & where,
-                    std::size_t blockIndex,
-                    uint64_t what){
-        std::size_t cellIndex = blockIndex/cellCapacity;
-        uint64_t mask = !(blockMask<<(blockIndex%cellCapacity));
-        what <<= blockIndex%cellCapacity;
-        if(cellIndex >= where.size()) where.resize(cellIndex+1,0);
-        (where[cellIndex] &= mask) |= what;
-    }*/
-
     /**
      * @brief Compares two numbers whithout taking sign into account
      * @param other number to compare with
@@ -1480,20 +1459,68 @@ private:
     }
 
     /**
-     * @brief Rise this number to the power of positive integer exponent
-     * @param exponent nubmer representing positive integer value
+     * @brief Rise this number to the power of integer exponent
+     * @param exponent nubmer representing integer value
      */
-    /*
-    void int_pow(number && exponent){
-        number nula(0);
-        number orig(*this);
-        //naivní algoritmus
-        while(exponent > nula){
-            operator*=(orig);
-            --exponent;
+    void int_pow(number exponent){
+        // fast path for exponent 0
+        if(exponent.cmp_ignore_sig(number()) == 0){
+            operator=(number(1));
+        }
+        // fast path for powerbases 0 and (-)1
+        else if(cmp_ignore_sig(number())==0 || cmp_ignore_sig(number(1))==0){
+            if (! isPositive) { // 0 is treated as positive, therefore must be -1
+                isPositive = ((exponent%number(2)).cmp_ignore_sig(number())==0);
+            }
+        }
+        else{
+            // negative exponent handling
+            number others(1), help;
+            number one(1),two(2);
+            if(!exponent.isPositive){
+                // convert the problem to positive power of inverse number
+                exponent.isPositive = true;
+                (*this) = one/(*this);
+            }
+            // divide and conquer - halve the exponent in each pass
+            std::size_t scalebak = scale;
+            scale = 0; // we need wholepart division for next part
+            while(exponent > one){
+                if(exponent%two == one) others *= (*this);
+                help = (*this);
+                operator*=(help);
+                exponent/=two;
+            }
+            scale = scalebak; // revert to original scale
+            operator*=(others);
         }
     }
-    */
+
+    /**
+     * @brief real_pow Rise this number to the power of non-integer exponent
+     *
+     * Setting scale affects precision of this operation
+     *
+     * @param exponent nubmer representing value of exponent
+     * @param precision represents the number of iterations to take when approximating result
+     */
+    void real_pow(const number& exponent, const number & precision){
+        if(!isPositive){
+            throw(unsupported_operation("non-integer power of a negative number"));
+        }
+        number x,tmp;
+        const number one(1);
+        if(operator<(one)){
+            x = one - (*this);
+        }
+        else{
+            x = -(((*this)-one)/(*this));
+        }
+        for (number k=0; k<precision;++k){
+            tmp+=(binomial(exponent,k)*std::pow(x,k));
+        }
+        operator=(one/tmp);
+    }
 
     /**
      * @brief Divides this by other and returns either the result of division or modulo based on the div parameter

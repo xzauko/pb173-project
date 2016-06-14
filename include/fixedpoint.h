@@ -702,7 +702,7 @@ public:
      * @param x value to construct number with
      * @param scale how many fractional places to calculate (in target radix)
      */
-    /*template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
+    template<typename T, typename = decltype(static_cast<std::true_type>(std::is_floating_point<T>()))>
     explicit number(T x, unsigned int fracnum = 5):
         isPositive(x>=0)
     {
@@ -713,12 +713,12 @@ public:
             fracnum = 19;
         }
         if (x < 0) x*=-1;
-        std::string whole, decimal;
-        whole = std::to_string(std::floor(x));
-        if (whole.find_first_of('.') != std::string::npos) {
-            whole.resize(whole.find_first_of('.'),'0');
+        std::string whole1, decimal;
+        whole1 = std::to_string(std::floor(x));
+        if (whole1.find_first_of('.') != std::string::npos) {
+            whole1.resize(whole1.find_first_of('.'),'0');
         }
-        std::reverse(whole.begin(), whole.end()); // reverse string - BIG ENDIAN storage
+        std::reverse(whole1.begin(), whole1.end()); // reverse string - BIG ENDIAN storage
         x -= std::floor(x);
         for (int i = std::min(fracnum, static_cast<unsigned>(std::ceil(10.0/radix))); i>=0; --i) x*=10;
         decimal = std::to_string(std::floor(x));
@@ -728,7 +728,7 @@ public:
 #if !(defined(FIXEDPOINT_CASE_INSENSITIVE) || defined(FIXEDPOINT_CASE_SENSITIVE))
         // only perform the following
         // if we can't suppose anything about digits[]
-        for (auto x = whole.begin(); x!=whole.end(); ++x){
+        for (auto x = whole1.begin(); x!=whole1.end(); ++x){
             // convert from digits 0-9 to whatever our encoding uses
             *x = digits[*x-'0'];
         }
@@ -738,16 +738,29 @@ public:
         }
 #endif
         if (radix == 10){
-            whole = whole;
-            fractional = decimal;
+            for(std::size_t i = 0; i<whole1.size();++i){
+                whole.set(i,values[static_cast<int>(whole1[i])]);
+            }
+            for(std::size_t i = 0; i<decimal.size();++i){
+                fractional.set(i,values[static_cast<int>(decimal[i])]);
+            }
         }
         else{
-            auto res = convert_with_vector(whole,decimal,10,fracnum);
-            whole = std::move(res.first);
-            fractional = std::move(res.second);
+            std::vector<uint8_t> whole2,decimal1;
+            std::transform(whole1.begin(),whole1.end(),std::back_inserter(whole2),[](int x){return values[x];});
+            std::transform(decimal.begin(),decimal.end(),std::back_inserter(decimal1),[](int x){return values[x];});
+            auto res = convert_with_vector(whole2,decimal1,10,fracnum);
+            whole2 = std::move(res.first);
+            decimal1 = std::move(res.second);
+            for(std::size_t i = 0; i<whole2.size();++i){
+                whole.set(i,whole2[i]);
+            }
+            for(std::size_t i = 0; i<decimal1.size();++i){
+                fractional.set(i,decimal1[i]);
+            }
         }
         strip_zeroes();
-    }*/
+    }
 
     number(const number &) = default;
     number(number &&) = default;
@@ -1018,12 +1031,17 @@ public:
      * @throw unsupported_operation when attemted to power negative number with fractional number
      */
     number& pow(const number & exponent, const number & precision = number(100)){
-        // fractional part check - TO DO - implement
-        if(! exponent.fractional.all_of(0)){
-            real_pow(exponent, precision);
+        // fast path for exponent 0
+        if(exponent.cmp_ignore_sig(number()) == 0){
+            operator=(number(1));
         }
         else{
-            int_pow(exponent);
+            if(exponent.fractional.all_of(0)){
+                int_pow(exponent);
+            }
+            else{
+                real_pow(exponent, precision);
+            }
         }
         strip_zeroes();
         return *this;
@@ -1044,7 +1062,8 @@ public:
         }
         number result(1);
         for(number i=1;i<=k;++i){
-            result *= (n+1-i)/i;
+            result *= (n-i+1);
+            result /= i;
         }
         return result;
     }
@@ -1472,16 +1491,12 @@ private:
     }
 
     /**
-     * @brief Rise this number to the power of integer exponent
+     * @brief Raise this number to the power of integer exponent
      * @param exponent nubmer representing integer value
      */
     void int_pow(number exponent){
-        // fast path for exponent 0
-        if(exponent.cmp_ignore_sig(number()) == 0){
-            operator=(number(1));
-        }
         // fast path for powerbases 0 and (-)1
-        else if(cmp_ignore_sig(number())==0 || cmp_ignore_sig(number(1))==0){
+        if(cmp_ignore_sig(number())==0 || cmp_ignore_sig(number(1))==0){
             if (! isPositive) { // 0 is treated as positive, therefore must be -1
                 isPositive = ((exponent%number(2)).cmp_ignore_sig(number())==0);
             }
@@ -1510,30 +1525,31 @@ private:
     }
 
     /**
-     * @brief real_pow Rise this number to the power of non-integer exponent
+     * @brief real_pow Raise this number to the power of non-integer exponent
      *
      * Setting scale affects precision of this operation
      *
      * @param exponent nubmer representing value of exponent
      * @param precision represents the number of iterations to take when approximating result
      */
-    void real_pow(const number& exponent, const number & precision){
+    void real_pow(number exponent, const number & precision){
         if(!isPositive){
             throw(unsupported_operation("non-integer power of a negative number"));
         }
-        number x,resRecipr,tmp;
+        number x,resRecipr = binomial(exponent,0),xcp;
         const number one(1);
         if(operator<(one)){
-            x = one - (*this);
+            // case (*this) > 1 gives better approximation
+            operator=(one/(*this));
+            exponent.isPositive = ! exponent.isPositive;
         }
-        else{
-            x = (((*this)-one)/(*this));
-            x.isPositive = !x.isPositive; // unary - operation not available
-        }
-        for (number k=0; k<precision;++k){
-            tmp = x;
-            tmp.int_pow(k);
-            resRecipr+=(binomial(exponent,k)*tmp);
+        x = (((*this)-one)/(*this));
+        x.isPositive = !x.isPositive; // unary - operation not available
+        // k==0 case covered when initializing resRecipr (power would be 1)
+        for (number k=1; k<precision;++k){
+            xcp = x;
+            xcp.int_pow(k);
+            resRecipr+=(xcp * binomial(exponent,k));
         }
         operator=(one/resRecipr);
     }
@@ -1544,7 +1560,7 @@ private:
      * @param div whether division, or modulo shall be returned
      * @return Result of division if div is true and result of modulo otherwise
      */
-    number& div_or_mod(const number& other,bool div){
+    number& div_or_mod(number other,bool div){
         if(other == number()){
             throw(division_by_zero());
         }
@@ -1665,6 +1681,10 @@ private:
                 v.push(other.whole.get(cp_i));
             }
         }
+        else{
+            // leading zeroes cause SIGFPE (division by zero)
+            while(v.back() == 0) v.pop();
+        }
 
         // Dividend is less than divisor after alignment
         if(lt_le(u,v)){
@@ -1673,7 +1693,6 @@ private:
                 isPositive = true;
             }
         }
-
         else{
             std::size_t m,n;
             int cq,borrow;
@@ -1686,9 +1705,9 @@ private:
             unsigned int d = radix/(v.back()+1);
             u = muls_le(u,d);
             v = muls_le(v,d);
-            if(u.size()==m+n) u.push(0);
             const int v0 = v.back(); // MSD of divisor
             // 2. Initialize j, 7. Loop on j
+            //std::clog << m << ' ' << n << ' '<< shift << std::endl;
             for(std::size_t j = m+1; j>0; --j){
 
                 // 3. Calculate ^q
@@ -1716,6 +1735,7 @@ private:
                     addref_ic_le(u,shiftedv);
                 }
                 q.set(j-1,cq);
+                if(u.all_of(0)) break;
             }
 
             // 8. Unnormalize
@@ -1743,7 +1763,7 @@ private:
                     carry %= d;
                     carry *= radix;
                 }
-                for(r_i = u.size(); r_i > shift+scale; --r_i){
+                for(r_i = m+n+1; r_i > shift+scale; --r_i){
                     whole.set(r_i-scale-shift-1,u.get(r_i-1));
                 }
                 if(whole.size()==0) whole.push(0);
@@ -1752,7 +1772,7 @@ private:
                 }
             }
 
-            /*
+        /*
             _number result;
             number divisor;
             number dividend;
@@ -1768,7 +1788,6 @@ private:
             for(std::size_t i=0; i<fractional.size();++i){
                 dividend.fractional.push(fractional.get(i));
             }
-            //dividend.fractional.append(fractional);
 
             while(!other.whole.empty()){
                 divisor.fractional.push(other.whole.pop());
@@ -1776,8 +1795,11 @@ private:
             //divisor.fractional.assign(other.whole.rbegin(), other.whole.rend());
             std::size_t shift = other.fractional.size();
             if(divisor == 0){
-                for(std::size_t i = 0; i<other.fractional.size();++i){
-                    if (other.fractional.get(i)!=0) shift = i;
+                for(std::size_t i = other.fractional.size(); i>0; --i){
+                    if (other.fractional.get(i-1)!=0){
+                        shift = i;
+                        break;
+                    }
                 }
                 //shift = other.fractional.find_last_not_of(digits[0]);
 
@@ -1788,12 +1810,12 @@ private:
                 }
                 //divisor.fractional.assign(other.fractional.substr(shift));
                 // TO DO - investigate logical reason for ++shift;
-                ++shift;
-            }else{
+                //++shift;
+            }
+            else{
                 for(std::size_t i = 0; i < other.fractional.size(); ++i){
                     divisor.fractional.push(other.fractional.get(i));
                 }
-                //divisor.fractional.append(other.fractional);
             }
 
             whole.clear();
@@ -1808,20 +1830,19 @@ private:
                 return *this;
             }
 
-            for(int i = 0; i <= steps;i++){
-                size_t tmp=0;
+            for(int i = 0; i <= steps;++i){
+                std::size_t tmp=0;
                 while(dividend.cmp_ignore_sig(divisor) >= 0){
-                    tmp++;
+                    ++tmp;
                     dividend -= divisor;
                 }
                 result.push(tmp);
                 // insert 0 to beginning
-                _number hlp(0,1);
+                _number hlp(1,0);
                 for (std::size_t i=0;i<divisor.fractional.size();++i){
                     hlp.push(divisor.fractional.get(i));
                 }
                 divisor.fractional = std::move(hlp);
-                //divisor.fractional.insert(0, 1, digits[0]);
             }
             if(div){
                 int move = result.size() - scale;
@@ -1834,19 +1855,16 @@ private:
                     while(!result.empty()){
                         whole.push(result.pop());
                     }
-                    //whole.assign(result.rbegin()+scale,result.rend());
-                    //fractional.clear();
-                    //fractional.append(result,move, std::string::npos);
-                }else{
+                }
+                else{
                     fractional.resize(fractional.size()-move,0);
                     for(std::size_t i=0; i<result.size();++i){
                         fractional.push(result.get(i));
                     }
-                    //fractional.append(result);
                 }
-
                 isPositive = (isPositive == other.isPositive);
-            }else{
+            }
+            else{
                 fractional.clear();
                 for(std::size_t i=dividend_size;i<dividend.fractional.size();++i){
                     fractional.push(dividend.fractional.get(i));
@@ -1860,8 +1878,8 @@ private:
                 //whole = std::move(tmp);
                 //fractional = dividend.fractional.substr(whole.size());
                 //scale = 0;
-            }
-            */
+            }*/
+
         }
         strip_zeroes();
         return *this;

@@ -200,10 +200,6 @@ struct unsupported_operation: public std::runtime_error{
  * <ol>
  * <li>implementation caveat - maximum supported system is base-36 (or base-64),
  * due to lack of suitable ASCII chaacters to express numerals</li>
- * <li><b>Known bug</b>: performing @code myVar1 *= myVar1; @endcode
- * results in an exception, use @code myVar1 = myVar1 * myVar1; @endcode
- * or @code myVar1.pow(2); //implicitly converts 2 to same type as myVar1 @endcode
- * instead.</li>
  * <li>Use c++14 for compilation.</li>
  * </ol>
  */
@@ -227,31 +223,27 @@ private:
 
         /**
          * @brief The _item struct is an element of the vector used for data storage
+         *
+         * Wastes 1B when bitsize is 1 (radix 2),
+         * but saves 2B when bitsize==5 (radices from 17 to 32)
+         * compared to uint8_t.
          */
         template<unsigned bitsize>
         struct _item{
-            uint16_t b0:bitsize,
-                       b1:bitsize,
-                       b2:bitsize,
-                       b3:bitsize,
-                       b4:bitsize,
-                       b5:bitsize,
-                       b6:bitsize,
-                       b7:bitsize;
+            uint16_t b0:bitsize,b1:bitsize,
+                       b2:bitsize,b3:bitsize,
+                       b4:bitsize,b5:bitsize,
+                       b6:bitsize,b7:bitsize;
 
             _item(int d_val = 0):
                 b0(d_val),b1(d_val),b2(d_val),b3(d_val),
                 b4(d_val),b5(d_val),b6(d_val),b7(d_val){}
 
             bool operator==(const _item & o) const{
-                return (b0==o.b0 &&
-                        b1==o.b1 &&
-                        b2==o.b2 &&
-                        b3==o.b3 &&
-                        b4==o.b4 &&
-                        b5==o.b5 &&
-                        b6==o.b6 &&
-                        b7==o.b7);
+                return (b0==o.b0 &&  b1==o.b1 &&
+                        b2==o.b2 &&  b3==o.b3 &&
+                        b4==o.b4 &&  b5==o.b5 &&
+                        b6==o.b6 &&  b7==o.b7);
             }
 
         };
@@ -569,7 +561,7 @@ public:
             throw(invalid_number_format("contains more than one decimal separator"));
         }
         auto start = src.cbegin();
-        std::size_t rdx = radix;
+        int rdx = radix;
         if (*start=='-') ++start; // negative check already happened
         if ((src.find_first_of(':'))!=src.npos){ // has radix specified
             std::stringstream x("");
@@ -605,9 +597,9 @@ public:
         if (std::any_of(
                     start,
                     src.cend(),
-                    [rdx = static_cast<int>(rdx)](const char c){
-                    return (values[static_cast<int>(c)]==-1 ||
-                            (values[static_cast<int>(c)]>=rdx));
+                    [rdx](const char c){
+                    return (values[c]==-1 ||
+                            (values[c]>=rdx));
                     }))
         {
             std::cerr << src
@@ -890,31 +882,25 @@ public:
             return *this;
         }
         else{
-            // representing numbers as fraxtions x/y, where y has format of
+            // representing numbers as fractions x/y, where y has format of
             // 1000...0 (number of fractional places zeroes)
-            //size_t decimals = std::max(fractional.size(), other.fractional.size());
-            // expected maximum size of product
-            std::size_t size = (fractional.size() + whole.size()) +
-                    (other.fractional.size() + other.whole.size());
             // size of fractional part (precision)
             std::size_t decimals = std::max(fractional.size(), other.fractional.size());
 
-            const number a(*this);
+            const number& a = *this;
             const number& b = other;
+            number r; // result
+            r.isPositive = isPositive;
 
             const std::size_t dec_point = fractional.size()+other.fractional.size();
-            fractional.clear();
-            //fractional.resize(dec_point, digits[0] );
-            whole.clear();
-            whole.resize(size, 0);
 
-            auto product = [this, dec_point](std::size_t i, int what) -> void{
+            auto product = [&r, dec_point](std::size_t i, int what) -> void{
                 if(i < dec_point){
                     i = dec_point - i - 1;
-                    this->fractional.set(i,what);
+                    r.fractional.set(i,what);
                 }else{
                     i = i - dec_point;
-                    this->whole.set(i,what);
+                    r.whole.set(i,what);
                 }
             };
             auto get = [](const number &from, std::size_t i) -> int{
@@ -932,15 +918,16 @@ public:
             for(std::size_t b_i = 0; b_i < p; b_i++){
                 unsigned char carry = 0;
                 for(std::size_t a_i = 0; a_i < q; a_i++){
-                    unsigned long tmp = get(*this, a_i + b_i);
+                    unsigned long tmp = get(r, a_i + b_i);
                     tmp += carry + get(a, a_i) * get(b, b_i);
                     carry = tmp / radix;
                     product(a_i + b_i, tmp % radix);
                 }
-                unsigned long tmp = get(*this,b_i + q);
+                unsigned long tmp = get(r,b_i + q);
                 tmp += carry;
                 product(b_i + q, tmp);
             }
+            operator=(std::move(r));
             fractional.resize(decimals, 0);
         }
         strip_zeroes();
@@ -1019,7 +1006,7 @@ public:
      * (division is used in calculation). Parameter precision specifies,
      * how many elements of the binomial series (starting from the first)
      * should be considered for calculation/approximation of the result.
-     * Default behavior is to take the first 100 elements,
+     * Default behavior is to take the first 50 elements,
      * and to not alter the scale.
      *
      * Please note: With scale and precision both at 100,
@@ -1030,7 +1017,7 @@ public:
      * @return Reference to *this
      * @throw unsupported_operation when attemted to power negative number with fractional number
      */
-    number& pow(const number & exponent, const number & precision = number(100)){
+    number& pow(const number & exponent, const number & precision = number(50)){
         // fast path for exponent 0
         if(exponent.cmp_ignore_sig(number()) == 0){
             operator=(number(1));
@@ -1156,7 +1143,6 @@ public:
         std::istringstream tokenizer(expr);
         std::string tmp{};
         number a;
-        std::string::const_iterator y;
         while( tokenizer >> tmp ){
             if( tmp.back() == '(') tmp.pop_back();
             if(tmp == "+"){
@@ -1227,6 +1213,15 @@ public:
                     throw(invalid_expression_format("requested operation needs more parameters than available"));
                 }
                 stack.back().trunc();
+            }
+            else if(tmp == "@binomial"){
+                if(stack.size()<2){
+                    std::clog << "Not enough arguments for performing operation: " << tmp;
+                    throw(invalid_expression_format("requested operation needs more parameters than available"));
+                }
+                number b(std::move(stack.back())); stack.pop_back();
+                a = std::move(stack.back()); stack.pop_back();
+                stack.push_back(binomial(a,b));
             }
             else if(tmp.front() == '@'){
                 throw(invalid_expression_format(("unsupported function token found: "s).append(tmp)));
@@ -1495,6 +1490,8 @@ private:
      * @param exponent nubmer representing integer value
      */
     void int_pow(number exponent){
+        std::size_t scalebak = scale;
+        scale = 0; // we need wholepart division for int_pow
         // fast path for powerbases 0 and (-)1
         if(cmp_ignore_sig(number())==0 || cmp_ignore_sig(number(1))==0){
             if (! isPositive) { // 0 is treated as positive, therefore must be -1
@@ -1511,17 +1508,15 @@ private:
                 (*this) = one/(*this);
             }
             // divide and conquer - halve the exponent in each pass
-            std::size_t scalebak = scale;
-            scale = 0; // we need wholepart division for next part
             while(exponent > one){
                 if(exponent%two == one) others *= (*this);
                 help = (*this);
                 operator*=(help);
                 exponent/=two;
             }
-            scale = scalebak; // revert to original scale
             operator*=(others);
         }
+        scale = scalebak; // revert to original scale
     }
 
     /**
@@ -1771,115 +1766,6 @@ private:
                     fractional.push(u.get(r_i-1));
                 }
             }
-
-        /*
-            _number result;
-            number divisor;
-            number dividend;
-
-            std::size_t dividend_size = whole.size();
-            long long deviation = dividend_size - other.whole.size();
-
-            // shift so that handling is possible as whole numbers,
-            // and account for possible new numbers of the modulo (nonzero scale)
-            while(!whole.empty()){
-                dividend.fractional.push(whole.pop());
-            }
-            for(std::size_t i=0; i<fractional.size();++i){
-                dividend.fractional.push(fractional.get(i));
-            }
-
-            while(!other.whole.empty()){
-                divisor.fractional.push(other.whole.pop());
-            }
-            //divisor.fractional.assign(other.whole.rbegin(), other.whole.rend());
-            std::size_t shift = other.fractional.size();
-            if(divisor == 0){
-                for(std::size_t i = other.fractional.size(); i>0; --i){
-                    if (other.fractional.get(i-1)!=0){
-                        shift = i;
-                        break;
-                    }
-                }
-                //shift = other.fractional.find_last_not_of(digits[0]);
-
-                if(shift == other.fractional.size() ) throw division_by_zero();
-
-                for(std::size_t i = 0; i<shift;++i){
-                    divisor.fractional.push(other.fractional.get(i));
-                }
-                //divisor.fractional.assign(other.fractional.substr(shift));
-                // TO DO - investigate logical reason for ++shift;
-                //++shift;
-            }
-            else{
-                for(std::size_t i = 0; i < other.fractional.size(); ++i){
-                    divisor.fractional.push(other.fractional.get(i));
-                }
-            }
-
-            whole.clear();
-
-            // number of division steps
-            int steps = deviation + scale + shift;
-
-            if (steps < 0){
-                // divisor is bigger by order(s) of magnitude,
-                // the whole dividend is the modulo
-                if(div) *this = 0;
-                return *this;
-            }
-
-            for(int i = 0; i <= steps;++i){
-                std::size_t tmp=0;
-                while(dividend.cmp_ignore_sig(divisor) >= 0){
-                    ++tmp;
-                    dividend -= divisor;
-                }
-                result.push(tmp);
-                // insert 0 to beginning
-                _number hlp(1,0);
-                for (std::size_t i=0;i<divisor.fractional.size();++i){
-                    hlp.push(divisor.fractional.get(i));
-                }
-                divisor.fractional = std::move(hlp);
-            }
-            if(div){
-                int move = result.size() - scale;
-                if(move>0){
-                    fractional.clear();
-                    for(std::size_t i=move;i<result.size();++i){
-                        fractional.push(result.get(i));
-                    }
-                    result.resize(move,0);
-                    while(!result.empty()){
-                        whole.push(result.pop());
-                    }
-                }
-                else{
-                    fractional.resize(fractional.size()-move,0);
-                    for(std::size_t i=0; i<result.size();++i){
-                        fractional.push(result.get(i));
-                    }
-                }
-                isPositive = (isPositive == other.isPositive);
-            }
-            else{
-                fractional.clear();
-                for(std::size_t i=dividend_size;i<dividend.fractional.size();++i){
-                    fractional.push(dividend.fractional.get(i));
-                }
-                dividend.fractional.resize(dividend_size,0);
-                while(!dividend.fractional.empty()){
-                    whole.push(dividend.fractional.pop());
-                }
-                //std::string tmp= dividend.fractional.substr(0,whole.size());
-                //std::reverse(tmp.begin(),tmp.end());
-                //whole = std::move(tmp);
-                //fractional = dividend.fractional.substr(whole.size());
-                //scale = 0;
-            }*/
-
         }
         strip_zeroes();
         return *this;

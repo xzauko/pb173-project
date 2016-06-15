@@ -103,7 +103,7 @@ TEST_CASE("Move and copy constructors"){
 
 TEST_CASE("Operator ="){
     hexadecimal n1,n2,n3;
-    n1 = 25; // impicit conversion to number, then copy
+    n1 = 25; // impicit conversion to number, then copy/move
     n2 = -888888888888888888ll;
     n3 = 0xffffffffffffffffull;
     REQUIRE( n1.str() == "16::19"s );

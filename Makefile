@@ -41,6 +41,7 @@ test: testInOut testConst testCompare testArith testEval testExc noncompileTest
 	@echo "Running comparison operator tests:"
 	@./$(BDIR)/testCompare
 	@echo "Running artihmetic tests:"
+	@echo "This might take a long time (~half a minute)"
 	@./$(BDIR)/testArith
 	@echo "Running postfix and infix evaluation tests:"
 	@./$(BDIR)/testEval

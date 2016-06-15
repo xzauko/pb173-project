@@ -106,6 +106,21 @@ TEST_CASE("Division"){
     decimal::scale = 4;
     b /= a;
     REQUIRE( b == result2 );
+    // Step 6 test case:
+    decimal::scale = 0;
+    a = 4110;
+    b = 588;
+    REQUIRE( a/b == decimal(6) );
+    // pure fractional dividend case:
+    decimal::scale = 3;
+    a = decimal("0.009");
+    b = 3;
+    REQUIRE( a/b == decimal("0.003"));
+    // pure fractional divisor case:
+    decimal::scale = 0;
+    a = 1;
+    b = decimal("0.005");
+    REQUIRE( a/b == decimal(200) );
 }
 
 TEST_CASE("Modulo"){
@@ -119,13 +134,55 @@ TEST_CASE("Modulo"){
     REQUIRE( b == result2 );
 }
 
+TEST_CASE("Binomial"){
+    const duodecimal r1(56);
+    const decimal r2("92.20573984375"s),tolerance("0.00001");
+    const decimal r3("22.0229561046886265625");
+    const decimal n3("12.3"),k3(11);
+    REQUIRE(duodecimal::binomial(8,3) == r1 );
+    decimal::scale = 10;
+    const decimal b2 = decimal::binomial(decimal("8.45"),4);
+    const decimal b3 = decimal::binomial(n3,k3);
+    // scale affects precision, do not expect exact value
+    REQUIRE( b2 > (r2-tolerance) );
+    REQUIRE( b2 < (r2+tolerance) );
+    REQUIRE( b3 > (r3-tolerance) );
+    REQUIRE( b3 < (r3+tolerance) );
+}
+
 TEST_CASE("Power"){
+    // Integer powers
     decimal a("-1.5"),b(2),e(15);
-    const decimal c(3),d(15),o(1),t(2);
-    const decimal result1("-3.30"),result2("32768");
+    const decimal c(3),d(15),o(1),z(0);
+    const decimal result1("-3.300"),result2("32768");
     REQUIRE( std::pow(a,c) == result1 );
     b.pow(d);
     REQUIRE( b == result2 );
+    // Real powers
+    decimal::scale = 50;
+    decimal realPow1("0.5"), realPow2("0.73"),realPow3("12.4");
+    const decimal realExp1("-1.25"),realExp2("1.2345678"),realExp3("-1.4");
+    const decimal realRes1("2.378414230005442"), tolerance0("0.001");
+    const decimal realRes2("0.6780516921132284"),realRes3("0.029458432955048974");
+    const decimal tolerance1("0.000001");
+    realPow1.pow(realExp1);
+    realPow2.pow(realExp2);
+    // 3rd case fails with default precision (deviation exceeds tolerance)
+    // causes long calculation - real_pow is O(n^2) over precision
+    realPow3.pow(realExp3,200);
+    REQUIRE( realPow1 > realRes1-tolerance0 );
+    REQUIRE( realPow1 < realRes1+tolerance0 );
+    REQUIRE( realPow2 > realRes2-tolerance1 );
+    REQUIRE( realPow2 < realRes2+tolerance1 );
+    REQUIRE( realPow3 > realRes3-tolerance1 );
+    REQUIRE( realPow3 < realRes3+tolerance1 );
+    // Corner cases
+    // x^0, 1^n, (-1)^n - n from N, x from R
+    const decimal minus1(-1);
+    REQUIRE( std::pow(realPow1,z) == o );
+    REQUIRE( std::pow(o,result2) == o);
+    REQUIRE( std::pow(minus1,decimal(-124)) == o);
+    REQUIRE( std::pow(minus1,decimal(731)) == minus1 );
 }
 
 TEST_CASE("Floor"){

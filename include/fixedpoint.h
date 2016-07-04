@@ -1531,7 +1531,7 @@ private:
         if(!isPositive){
             throw(unsupported_operation("non-integer power of a negative number"));
         }
-        number x,resRecipr = binomial(exponent,0),xcp;
+        number x,resRecipr(1),xcp;
         const number one(1);
         if(operator<(one)){
             // case (*this) > 1 gives better approximation
@@ -1540,7 +1540,9 @@ private:
         }
         x = (((*this)-one)/(*this));
         x.isPositive = !x.isPositive; // unary - operation not available
-        // k==0 case covered when initializing resRecipr (power would be 1)
+        // k==0 case covered when initializing resRecipr:
+        //  * power would be 1
+        //  * binomial coefficient of anything over 0 is 1
         for (number k=1; k<precision;++k){
             xcp = x;
             xcp.int_pow(k);
@@ -1559,9 +1561,10 @@ private:
         if(other == number()){
             throw(division_by_zero());
         }
-        // Multiplies _number by scalar (unsigned) (little endian)
+
+        // Multiplies _number by scalar (unsigned) (big endian)
         // unify with muladd_vector_uint_uint ?
-        auto muls_le =
+        auto muls_be =
                 [](const _number & m1, unsigned int m2) -> _number{
             unsigned carry = 0;
             _number result;
@@ -1579,8 +1582,8 @@ private:
             return result;
         };
 
-        // Less-or-equal comparison of little endian _numbers
-        auto lt_le =
+        // Less-or-equal comparison of big endian _numbers
+        auto lt_be =
                 [](const _number & n1, const _number & n2) -> bool{
             std::size_t i = std::max(n1.size(),n2.size());
             int a,b;
@@ -1593,7 +1596,7 @@ private:
         };
 
         // Subtracts 2 _numbers, returns borrow (modifies 1st operand)
-        auto subref_le =
+        auto subref_be =
                 [](_number& a, const _number& b) -> int{
             int borrow = 0,tmp;
             std::size_t i= 0;
@@ -1620,7 +1623,7 @@ private:
         };
 
         // Adds 2 _numbers, ignores last carry, if any
-        auto addref_ic_le =
+        auto addref_ic_be =
                 [](_number& a, const _number& b) -> void{
             int carry = 0;
             std::size_t i = 0;
@@ -1638,7 +1641,7 @@ private:
         };
 
         // shifts _number to the right (arithmetic shift in base radix)
-        auto shift_append_le =
+        auto shift_append_be =
                 [](const _number cp, unsigned int shft) -> _number{
             _number rv;
             rv.resize(cp.size()+shft,0);
@@ -1648,41 +1651,59 @@ private:
             return rv;
         };
 
-        std::size_t u_fs = fractional.size(), v_fs = other.fractional.size();
-        // get real end of fractional part
-        while(u_fs > 0 && fractional.get(--u_fs)==0);
-        while(v_fs > 0 && other.fractional.get(--v_fs)==0);
-        if(u_fs>0 || fractional.get(u_fs)!=0) ++u_fs;
-        if(v_fs>0 || other.fractional.get(v_fs)!=0) ++v_fs;
-        std::size_t shift = std::max(u_fs,v_fs);
+        std::size_t wbs = whole.size(), fbs = fractional.size();
+        // amount of dividend's whole part and franctional part significant digits
+        std::size_t wds = other.whole.size(), fds = other.fractional.size();
+        // same for divisor
+        std::size_t fdiff;
+        // difference in amount of significant digits in fractional part
+        std::size_t fbshift,fdshift;
+        // amount of digits shifted from fractional part: b-dividend, d-divisor
+
+        // calc wbs, then wds:
+        while(wbs>0 && whole.get(wbs-1)==0) --wbs;
+        while(wds>0 && other.whole.get(wds-1)==0) --wds;
+        // calc fbs, then fds:
+        while(fbs>0 && fractional.get(fbs-1)==0) --fbs;
+        while(fds>0 && other.fractional.get(fds-1)==0) --fds;
+        // calc fdiff and shifts:
+        fdiff = (fbs>fds?fbs-fds:0);
+        // if divisor has more significant digits, shift must be at least as long
+        fbshift = (fdiff>scale?fbs:fds+scale); // account for scale here
+        fdshift = fbshift-scale;
 
         // Algo from Knuth vol. 2 - "long division"
-        _number u, v; // all little endian
-        std::size_t cp_i;
+        _number u, v; // all big endian
+        std::size_t cp_i; // copying idex
         // u - dividend, v - divisor
-        u.resize(scale,0);
-        cp_i = shift;
-        for(; cp_i>0;--cp_i){
+        // copy and shift dividend - fractional part first:
+        for(cp_i = fbshift; cp_i>0; --cp_i){
             u.push(fractional.get(cp_i-1));
-            v.push(other.fractional.get(cp_i-1));
         }
-        if(whole.size()>1 || whole.get(0)!=0){
-            for(cp_i = 0; cp_i<whole.size(); ++cp_i){
+        if( wbs > 0 ){
+            for(cp_i = 0; cp_i<wbs; ++cp_i){
                 u.push(whole.get(cp_i));
             }
         }
-        if(other.whole.size()>1 || other.whole.get(0)!=0){
-            for(cp_i = 0; cp_i<other.whole.size(); ++cp_i){
+        else{ // strip possible leading zeroes if no digits in whole part
+            while(u.back()==0) u.pop();
+        }
+        // copy and shift divisor:
+        for(cp_i = fdshift; cp_i>0; --cp_i){
+            v.push(other.fractional.get(cp_i-1));
+        }
+        if( wds > 0 ){
+            for(cp_i = 0; cp_i<wds; ++cp_i){
                 v.push(other.whole.get(cp_i));
             }
         }
-        else{
-            // leading zeroes cause SIGFPE (division by zero)
-            while(v.back() == 0) v.pop();
+        else{ // strip possible leading zeroes if no digits in whole part
+            // SIGFPE occurs if this action is omitted
+            while(v.back()==0) v.pop();
         }
 
         // Dividend is less than divisor after alignment
-        if(lt_le(u,v)){
+        if(lt_be(u,v)){
             if (div){
                 operator=(number(0));
                 isPositive = true;
@@ -1698,8 +1719,8 @@ private:
             m = u.size() - n;
             // 1. Normalize
             unsigned int d = radix/(v.back()+1);
-            u = muls_le(u,d);
-            v = muls_le(v,d);
+            u = muls_be(u,d);
+            v = muls_be(v,d);
             const int v0 = v.back(); // MSD of divisor
             // 2. Initialize j, 7. Loop on j
             //std::clog << m << ' ' << n << ' '<< shift << std::endl;
@@ -1713,21 +1734,21 @@ private:
                     cq = (radix*u.get(n+j-1)+u.get(n+j-2))/v0;
                 }
                 // 3.-4. Check if cq isn't too big(3) and multiply(4)
-                shiftedv = shift_append_le(v,j-1);
-                if(lt_le(u, (tmp=muls_le(shiftedv,cq)))){
+                shiftedv = shift_append_be(v,j-1);
+                if(lt_be(u, (tmp=muls_be(shiftedv,cq)))){
                     --cq;
                     //tmp = muls_le(shiftedv,cq);
-                    subref_le(tmp,shiftedv);
+                    subref_be(tmp,shiftedv);
                 }
                 // 4. Sub
-                borrow = subref_le(u,tmp);
+                borrow = subref_be(u,tmp);
 
                 // 5. Test remainder
                 if (borrow > 0){
 
                     // 6. Add back
                     --cq;
-                    addref_ic_le(u,shiftedv);
+                    addref_ic_be(u,shiftedv);
                 }
                 q.set(j-1,cq);
                 if(u.all_of(0)) break;
@@ -1736,21 +1757,21 @@ private:
             // 8. Unnormalize
             whole.clear();
             fractional.clear();
+            std::size_t boundary;
             if (div){
                 isPositive = isPositive==other.isPositive;
-                std::size_t q_i;
-                q_i = q.size();
-                for(; q_i>scale; --q_i){
-                    whole.set(q_i-scale-1,q.get(q_i-1));
+                boundary = (q.size()>scale?q.size()-scale:0);
+                for(cp_i = boundary; cp_i>0; --cp_i){
+                    whole.set(cp_i-1,q.get(cp_i-1+scale));
                 }
                 if(whole.size()==0) whole.push(0);
-                for(; q_i>0; --q_i){
-                    fractional.push(q.get(q_i-1));
+                for(cp_i = scale; cp_i>0; --cp_i){
+                    fractional.push(q.get(cp_i-1));
                 }
             }
             else{
                 // unnormalize must divide remainder of u by d (one digit integer division):
-                std::size_t r_i = u.size();
+                std::size_t r_i = u.size(); // remainder index
                 int carry = 0;
                 for(;r_i>0;--r_i){
                     carry += u.get(r_i-1);
@@ -1758,12 +1779,13 @@ private:
                     carry %= d;
                     carry *= radix;
                 }
-                for(r_i = m+n+1; r_i > shift+scale; --r_i){
-                    whole.set(r_i-scale-shift-1,u.get(r_i-1));
+                boundary = (u.size()>fbshift?u.size()-fbshift:0);
+                for(cp_i = boundary; cp_i > 0; --cp_i){
+                    whole.set(cp_i-1,u.get(cp_i-1+fbshift));
                 }
                 if(whole.size()==0) whole.push(0);
-                for(; r_i > 0; --r_i){
-                    fractional.push(u.get(r_i-1));
+                for(cp_i = fbshift; cp_i > 0; --cp_i){
+                    fractional.push(u.get(cp_i-1));
                 }
             }
         }

@@ -76,4 +76,4 @@ $(BDIR)/testExc: $(ODIR)/runtimeexceptions.o | $(BDIR)
 
 noncompileTest: $(TDIR)/noncompile.cpp
 	@echo "Compiling this file should fail (noncompile.cpp)"
-	@ (!($(CXX) $(CXXFLAGS) $(LIBS) $^ 2>> /dev/null ) && echo "[OK] Compilation failure test successful")
+	@ (!($(CXX) $(CXXFLAGS) $(LIBS) $^ 2> /dev/null ) && echo "[OK] Compilation failure test successful")

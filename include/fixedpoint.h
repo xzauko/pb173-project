@@ -551,7 +551,7 @@ public:
         if (std::count_if(
                     src.cbegin(),
                     src.cend(),
-                    [](const char c){return values[static_cast<int>(c)]==-2;}
+                    [](const char c){return values[c]==-2;}
                     ) > 1){
             std::cerr << src
                       << " contains too many decimal separators"
@@ -614,7 +614,7 @@ public:
                 fractionals += *start;
             }
             else{
-                if (values[static_cast<int>(*start)] == -2) onDecimal = true;
+                if (values[*start] == -2) onDecimal = true;
                 else wholes += *start;
             }
         }
@@ -632,7 +632,6 @@ public:
         // convert here:
         if (rdx != radix){
             // convert from base rdx to base radix:
-            // convert radix to base rdx:
             if (fracnum < 0) fracnum = std::ceil(static_cast<double>(rdx)/radix)*fp.size();
             auto res = convert_with_vector(wp, fp, rdx, fracnum);
             wp = std::move(res.first);
@@ -726,10 +725,10 @@ public:
 #endif
         if (radix == 10){
             for(std::size_t i = 0; i<whole1.size();++i){
-                whole.set(i,values[static_cast<int>(whole1[i])]);
+                whole.set(i,values[whole1[i]]);
             }
             for(std::size_t i = 0; i<decimal.size();++i){
-                fractional.set(i,values[static_cast<int>(decimal[i])]);
+                fractional.set(i,values[decimal[i]]);
             }
         }
         else{

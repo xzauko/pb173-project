@@ -273,32 +273,32 @@ private:
         int get(std::size_t index) const{
             if(index>=realSize) return 0;
             else{
-                auto ref = _data.at(index/8);
+                auto cell = _data.at(index/8);
                 int rval;
                 switch(index%8){
                 case 0:
-                    rval = ref.b0;
+                    rval = cell.b0;
                     break;
                 case 1:
-                    rval = ref.b1;
+                    rval = cell.b1;
                     break;
                 case 2:
-                    rval = ref.b2;
+                    rval = cell.b2;
                     break;
                 case 3:
-                    rval = ref.b3;
+                    rval = cell.b3;
                     break;
                 case 4:
-                    rval = ref.b4;
+                    rval = cell.b4;
                     break;
                 case 5:
-                    rval = ref.b5;
+                    rval = cell.b5;
                     break;
                 case 6:
-                    rval = ref.b6;
+                    rval = cell.b6;
                     break;
                 case 7:
-                    rval = ref.b7;
+                    rval = cell.b7;
                     break;
                 };
                 return rval;
@@ -317,32 +317,31 @@ private:
             if(index>=realSize){
                 resize(index+1,0);
             }
-            // explicit type for ref - auto makes it const_reference
-            typename std::vector<vecitem>::reference ref = _data.at(index/8);
+            auto & cell = _data.at(index/8);
             switch(index%8){
             case 0:
-                ref.b0 = value;
+                cell.b0 = value;
                 break;
             case 1:
-                ref.b1 = value;
+                cell.b1 = value;
                 break;
             case 2:
-                ref.b2 = value;
+                cell.b2 = value;
                 break;
             case 3:
-                ref.b3 = value;
+                cell.b3 = value;
                 break;
             case 4:
-                ref.b4 = value;
+                cell.b4 = value;
                 break;
             case 5:
-                ref.b5 = value;
+                cell.b5 = value;
                 break;
             case 6:
-                ref.b6 = value;
+                cell.b6 = value;
                 break;
             case 7:
-                ref.b7 = value;
+                cell.b7 = value;
                 break;
             };
         }
@@ -364,24 +363,23 @@ private:
             std::size_t rnsize = newSize/8, roEnd = (_data.size()>0)?_data.size()-1:0;
             if(newSize%8!=0) ++rnsize;
             _data.resize(rnsize,a);
-            // explicit type for ref - auto makes it const_reference
             if(newSize>realSize){
-                typename std::vector<vecitem>::reference ref = _data.at(roEnd);
+                auto & cell = _data.at(roEnd);
                 switch(realSize%8){
                 case 1:
-                    ref.b1 = def_value;
+                    cell.b1 = def_value;
                 case 2:
-                    ref.b2 = def_value;
+                    cell.b2 = def_value;
                 case 3:
-                    ref.b3 = def_value;
+                    cell.b3 = def_value;
                 case 4:
-                    ref.b4 = def_value;
+                    cell.b4 = def_value;
                 case 5:
-                    ref.b5 = def_value;
+                    cell.b5 = def_value;
                 case 6:
-                    ref.b6 = def_value;
+                    cell.b6 = def_value;
                 case 7:
-                    ref.b7 = def_value;
+                    cell.b7 = def_value;
                     break;
                 case 0:
                     break;
@@ -420,24 +418,24 @@ private:
                                      [&cmpval](const vecitem & x){
                     return x==cmpval;
                 });
-                auto ref = _data.back();
+                auto cell = _data.back();
                 switch(realSize%8){
                 case 0:
-                    retVal = retVal && ref.b7==value;
+                    retVal = retVal && cell.b7==value;
                 case 7:
-                    retVal = retVal && ref.b6==value;
+                    retVal = retVal && cell.b6==value;
                 case 6:
-                    retVal = retVal && ref.b5==value;
+                    retVal = retVal && cell.b5==value;
                 case 5:
-                    retVal = retVal && ref.b4==value;
+                    retVal = retVal && cell.b4==value;
                 case 4:
-                    retVal = retVal && ref.b3==value;
+                    retVal = retVal && cell.b3==value;
                 case 3:
-                    retVal = retVal && ref.b2==value;
+                    retVal = retVal && cell.b2==value;
                 case 2:
-                    retVal = retVal && ref.b1==value;
+                    retVal = retVal && cell.b1==value;
                 case 1:
-                    retVal = retVal && ref.b0==value;
+                    retVal = retVal && cell.b0==value;
                 }
             }
             return retVal;
@@ -593,7 +591,6 @@ public:
             ++start;
         }
         // number validity check:
-        // TO DO - remove static_cast;
         if (std::any_of(
                     start,
                     src.cend(),
@@ -622,7 +619,6 @@ public:
             }
         }
         // reverse whole part (so it meets storage requirement):
-        //std::reverse(wholes.begin(), wholes.end());
         auto converter = [](const int x){return values[x];};
         wp.reserve(wholes.size()); fp.reserve(fractionals.size());
         std::transform(wholes.crbegin(),
@@ -667,7 +663,6 @@ public:
         static_assert(radix<=MAX_RADIX, "fixedpoint::number's radix too high");
         static_assert(radix>=2, "fixedpoint::number's radix is too low, use at least 2");
         std::size_t index=0; // obtain string representation
-        //if (!isPositive) rep.pop_back(); // get rid of - sign
         int help;
         while(x != 0){
             help = x%radix;
@@ -809,7 +804,7 @@ public:
             o1.isPositive = isPositive;
             return *this +=( o1 );
         }
-        //1 copy
+        // 1 copy
         number o1(other);
         if(cmp_ignore_sig(o1) == -1){
             // subtract bigger in abs value from smaller - swap if not the case
@@ -824,7 +819,6 @@ public:
         }
         int tmp, carry = 0;
         for ( std::size_t i = boundary; i>0; --i ){ // easier than with iterators
-            //tmp = values[static_cast<int>(fractional[i-1])] - values[static_cast<int>(o1.fractional[i-1])] + carry;
             tmp = fractional.get(i-1) - o1.fractional.get(i-1) + carry;
             if(tmp < 0) {
                 carry = -1;
@@ -844,10 +838,8 @@ public:
         std::size_t ourS = whole.size();
         std::size_t othS = o1.whole.size();
         for ( index = 0; index < ourS ;index++){
-            //tmp = values[static_cast<int>( whole.at(index))] + carry;
             tmp = whole.get(index) + carry;
             if ( index < othS ){
-                //tmp -= values[static_cast<int>( o1.whole.at(index)) ];
                 tmp -= o1.whole.get(index);
             }
             if(tmp < 0) {
@@ -857,7 +849,6 @@ public:
                 carry = 0;
             }
             if(tmp != 0) first_digit = index;
-            //whole.at(index) =  digits[tmp];
             whole.set(index,tmp);
         }
         whole.resize(first_digit + 1, 0 );
@@ -1101,11 +1092,8 @@ public:
      */
     std::string str() const{
         std::stringstream acc("");
-        //std::string reversewhole;
-        //reversewhole.append(whole.crbegin(), whole.crend());
         acc << static_cast<unsigned int>(radix) << "::";
         if( ! isPositive ) acc << "-";
-        //acc << reversewhole;
         std::size_t i = whole.size()-1;
         while( i>0 && whole.get(i)==0 ) --i;
         for (; i>0;--i){
@@ -1318,7 +1306,6 @@ public:
         };
         std::vector<string> operationStack, postfixBuild;
         string postfix, lparen{'(','[','{'}, rparen{')',']','}'};
-        //std::istringstream inp(expr);
         auto x = expr.cbegin();
         string now;
         while( getToken(now,x) ){
@@ -1399,7 +1386,6 @@ public:
      * @param other number to swap with
      */
     void swap( number& other ){
-        // TO DO - implement swap or change to std::swap
         whole.swap(other.whole);
         fractional.swap(other.fractional);
         std::swap(isPositive, other.isPositive);
@@ -1447,8 +1433,6 @@ private:
         // skip possible leading zeroes - TO DO test if needed and remove if not
         std::size_t pos = whole.size() - 1;
         std::size_t other_pos = other.whole.size() - 1;
-        //if(whole.npos == pos) pos=0;
-        //if(other.whole.npos == other_pos) other_pos=0;
         if(pos != other_pos){
             return (pos > other_pos) ? 1 : -1;
         }else{
@@ -1723,7 +1707,6 @@ private:
             v = muls_be(v,d);
             const int v0 = v.back(); // MSD of divisor
             // 2. Initialize j, 7. Loop on j
-            //std::clog << m << ' ' << n << ' '<< shift << std::endl;
             for(std::size_t j = m+1; j>0; --j){
 
                 // 3. Calculate ^q
@@ -1737,7 +1720,6 @@ private:
                 shiftedv = shift_append_be(v,j-1);
                 if(lt_be(u, (tmp=muls_be(shiftedv,cq)))){
                     --cq;
-                    //tmp = muls_le(shiftedv,cq);
                     subref_be(tmp,shiftedv);
                 }
                 // 4. Sub
@@ -1804,7 +1786,6 @@ private:
      */
     void strip_zeroes(){
         bool isZero;
-        //if((pos=whole.find_last_not_of(digits[0])) != whole.npos){
         while(whole.size() > 1 && whole.back() == 0){
             whole.pop();
         }

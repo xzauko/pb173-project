@@ -1429,7 +1429,6 @@ private:
      * @return 0 if equal, n<0 if *this<other, n>0 if *this>other
      */
     int cmp_ignore_sig(const number &other) const{
-        // skip possible leading zeroes - TO DO test if needed and remove if not
         std::size_t pos = whole.size() - 1;
         std::size_t other_pos = other.whole.size() - 1;
         if(pos != other_pos){
@@ -1446,23 +1445,12 @@ private:
                 return (whole.get(pos) > other.whole.get(pos)) ? 1 : -1;
             }
             // fractional part must decide
-            std::size_t limit = (fractional.size() < other.fractional.size()) ? fractional.size() : other.fractional.size();
+            std::size_t limit = std::max(fractional.size() , other.fractional.size());
             while(pos < limit){
                 if(fractional.get(pos) != other.fractional.get(pos)){
                     return (fractional.get(pos) > other.fractional.get(pos)) ? 1 : -1;
                 }
-                pos++;
-            }
-            // comparing against implicit zeroes
-            if(other.fractional.size() > limit){
-                for (;pos < other.fractional.size();pos++) {
-                    if (other.fractional.get(pos) > 0) return -1;
-                }
-            }
-            if(fractional.size() > limit){
-                for (;pos < fractional.size();pos++) {
-                    if (fractional.get(pos) > 0) return 1;
-                }
+                ++pos;
             }
             return 0;
         }

@@ -4,8 +4,6 @@
  * @author Tibor Zauko
  * @brief Single include implementation of fixedpoint arithmetic library.
  */
-// TO DO list:
-// Implement general power calculations
 
 //          Copyright Michal Pochobradský 2016.
 //          Copyright Tibor Zauko 2016.

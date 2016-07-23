@@ -53,8 +53,6 @@ static const signed char values[128] = {
     -1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, // 0x6
     25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, -1, -1, -1, -1, -1  // 0x7
 };
-// -2: desatinne oddelovace (. a ,), -1: neplatna cifra,
-// ostatne: hodnota cislice, ak >= sustave - neplatna
 
 /**
  * @brief Digits belonging to values
@@ -66,7 +64,7 @@ static const char digits[36] = {
     'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', // 2
     'u', 'v', 'w', 'x', 'y', 'z'                      // 3
 };
-// mapovanie hodnota -> cislica
+
 #elif defined( FIXEDPOINT_CASE_SENSITIVE ) && ! defined( FIXEDPOINT_CASE_INSENSITIVE )
 #define MAX_RADIX (64)
 /**
@@ -817,7 +815,7 @@ public:
             fractional.resize( o1.fractional.size(), 0 );
         }
         int tmp, carry = 0;
-        for ( std::size_t i = boundary; i>0; --i ){ // easier than with iterators
+        for ( std::size_t i = boundary; i>0; --i ){
             tmp = fractional.get(i-1) - o1.fractional.get(i-1) + carry;
             if(tmp < 0) {
                 carry = -1;
